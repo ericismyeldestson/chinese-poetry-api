@@ -133,9 +133,15 @@ for arch in amd64 arm64; do
     config_size=$(jq -er '.config.size' "$image_manifest")
     verify_descriptor "$config_digest" "$config_size"
     config=$(blob_path "$config_digest")
-    jq -e --arg arch "$arch" --arg revision "$expected_revision" '
+    layer_count=$(jq -er '.layers | length' "$image_manifest")
+    jq -e --arg arch "$arch" --arg revision "$expected_revision" \
+        --argjson layer_count "$layer_count" '
         .os == "linux" and
         .architecture == $arch and
+        .rootfs.type == "layers" and
+        (.rootfs.diff_ids | type) == "array" and
+        (.rootfs.diff_ids | length) == $layer_count and
+        all(.rootfs.diff_ids[]; test("^sha256:[0-9a-f]{64}$")) and
         .config.User == "10001:10001" and
         .config.Entrypoint == ["./startup.sh"] and
         .config.Labels["org.opencontainers.image.revision"] == $revision and

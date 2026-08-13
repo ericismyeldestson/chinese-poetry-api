@@ -256,7 +256,13 @@ jobs:
             /v2/"${IMAGE_NAME}"/blobs/uploads/*)
               upload_url="https://ghcr.io${location}"
               ;;
+            /v2/"${IMAGE_NAME}"/blobs/upload/*)
+              upload_url="https://ghcr.io${location}"
+              ;;
             https://ghcr.io/v2/"${IMAGE_NAME}"/blobs/uploads/*)
+              upload_url=$location
+              ;;
+            https://ghcr.io/v2/"${IMAGE_NAME}"/blobs/upload/*)
               upload_url=$location
               ;;
             *)
