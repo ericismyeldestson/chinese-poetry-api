@@ -24,32 +24,34 @@ import (
 )
 
 const (
-	MaxErrorsToDisplay = 100 // 最多展示的错误数量
-	MaxErrorsToCollect = 100 // 最多收集的错误数量
-	SampleErrorCount   = 5   // 出错时打印的错误样本数量
+	MaxErrorsToDisplay     = 100  // 最多展示的错误数量
+	MaxErrorsToCollect     = 100  // 最多收集的错误数量
+	SampleErrorCount       = 5    // 出错时打印的错误样本数量
+	deterministicBatchSize = 1000 // 持久化批次必须与主机 CPU 无关
 )
 
-// getOptimalConfig 根据机器 CPU 核数返回各类缓冲区与批量大小的推荐值。
-// 核数越多配置越激进：2 核（CI 环境）保守，4-8 核折中，10 核以上放开。
-func getOptimalConfig() (workBuffer, resultBuffer, errorBuffer, defaultBatch, minBatch, maxBatch int) {
+// getOptimalBufferSizes 根据机器 CPU 核数返回内存缓冲区推荐值。
+// 缓冲区只影响性能；数据库 INSERT 批次必须固定，否则 FTS5 segment
+// 布局会随主机 CPU 数变化，破坏可重现的发布资产。
+func getOptimalBufferSizes() (workBuffer, resultBuffer, errorBuffer int) {
 	cpuCount := runtime.NumCPU()
 
 	switch {
 	case cpuCount <= 2:
 		// GitHub Actions 等低配 CI
-		return 50, 1000, 50, 200, 50, 300
+		return 50, 1000, 50
 
 	case cpuCount <= 4:
 		// 入门级机器
-		return 75, 2000, 75, 300, 100, 500
+		return 75, 2000, 75
 
 	case cpuCount <= 8:
 		// 中端机器
-		return 100, 3000, 100, 400, 150, 700
+		return 100, 3000, 100
 
 	default:
 		// 高端机器
-		return 500, 10000, 500, 1000, 500, 2000
+		return 500, 10000, 500
 	}
 }
 
@@ -122,8 +124,6 @@ func NewProcessor(repo *database.Repository, workers int, convertToTraditional b
 		workers = runtime.NumCPU()
 	}
 
-	_, _, _, defaultBatch, _, _ := getOptimalConfig()
-
 	// 包一层缓存，避免重复查询朝代/作者
 	cachedRepo := database.NewCachedRepository(repo)
 
@@ -131,7 +131,7 @@ func NewProcessor(repo *database.Repository, workers int, convertToTraditional b
 		repo:                 cachedRepo,
 		workers:              workers,
 		convertToTraditional: convertToTraditional,
-		batchSize:            defaultBatch,
+		batchSize:            deterministicBatchSize,
 	}
 }
 
@@ -274,7 +274,7 @@ func (p *Processor) Process(poems []loader.PoemWithMeta) error {
 	)
 
 	// 任务分发用的 channel，缓冲区大小随机器配置自适应
-	workBuffer, resultBuffer, errorBuffer, _, _, _ := getOptimalConfig()
+	workBuffer, resultBuffer, errorBuffer := getOptimalBufferSizes()
 
 	workCh := make(chan PoemWork, workBuffer)
 	resultCh := make(chan *database.Poem, resultBuffer)

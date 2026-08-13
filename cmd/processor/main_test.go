@@ -2,13 +2,18 @@ package main
 
 import (
 	"database/sql"
+	"encoding/binary"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
+
+	appdatabase "github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/loader"
 )
 
 func TestProcessUnifiedDatabaseProducesPortableSingleFile(t *testing.T) {
@@ -27,6 +32,184 @@ func TestProcessUnifiedDatabaseProducesPortableSingleFile(t *testing.T) {
 		_, err := os.Stat(dbPath + suffix)
 		require.ErrorIs(t, err, os.ErrNotExist)
 	}
+}
+
+func TestNormalizeSQLiteStatisticsCanonicalizesPhysicalRowOrder(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "statistics.db")
+	db, err := appdatabase.Open(dbPath, 1, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+
+	for _, statement := range []string{
+		"CREATE TABLE alpha (id INTEGER PRIMARY KEY, value TEXT NOT NULL)",
+		"CREATE INDEX alpha_value ON alpha(value)",
+		"CREATE TABLE omega (id INTEGER PRIMARY KEY, value TEXT NOT NULL)",
+		"CREATE INDEX omega_value ON omega(value)",
+		"INSERT INTO alpha(value) VALUES ('a'), ('b'), ('c')",
+		"INSERT INTO omega(value) VALUES ('x'), ('y'), ('z')",
+		"ANALYZE",
+		`CREATE TEMP TABLE reversed_stat1 AS
+		 SELECT tbl, idx, stat FROM sqlite_stat1
+		 ORDER BY tbl COLLATE BINARY DESC, idx COLLATE BINARY DESC, stat COLLATE BINARY DESC`,
+		"DELETE FROM sqlite_stat1",
+		`INSERT INTO sqlite_stat1(tbl, idx, stat)
+		 SELECT tbl, idx, stat FROM reversed_stat1`,
+		"DROP TABLE reversed_stat1",
+	} {
+		require.NoError(t, db.Exec(statement).Error)
+	}
+
+	statOrder := func(orderBy string) string {
+		var value string
+		require.NoError(t, db.Raw(
+			`SELECT group_concat(quote(tbl) || '|' || quote(idx) || '|' || quote(stat), char(10))
+			 FROM (SELECT tbl, idx, stat FROM sqlite_stat1 ORDER BY `+orderBy+`)`,
+		).Scan(&value).Error)
+		return value
+	}
+
+	require.NotEqual(t, statOrder("rowid"), statOrder("tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY"))
+	require.NoError(t, normalizeSQLiteStatistics(db))
+	require.Equal(t, statOrder("tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY"), statOrder("rowid"))
+	require.NoError(t, db.Exec("VACUUM").Error)
+	require.Equal(t, statOrder("tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY"), statOrder("rowid"))
+}
+
+func TestCanonicalSQLiteSnapshotEliminatesWriteHistory(t *testing.T) {
+	dir := t.TempDir()
+	seedPath := filepath.Join(dir, "seed.db")
+	seed, err := appdatabase.Open(seedPath, 1, 1)
+	require.NoError(t, err)
+	for _, statement := range []string{
+		"CREATE TABLE entries (id INTEGER PRIMARY KEY, value TEXT NOT NULL)",
+		"CREATE INDEX entries_value ON entries(value)",
+		"INSERT INTO entries(value) VALUES ('stable-a'), ('stable-b')",
+		"ANALYZE",
+	} {
+		require.NoError(t, seed.Exec(statement).Error)
+	}
+	require.NoError(t, normalizeSQLiteStatistics(seed))
+	var checkpoint struct {
+		Busy       int `gorm:"column:busy"`
+		Log        int `gorm:"column:log"`
+		Checkpoint int `gorm:"column:checkpointed"`
+	}
+	require.NoError(t, seed.Raw("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&checkpoint).Error)
+	require.Zero(t, checkpoint.Busy)
+	require.Equal(t, checkpoint.Log, checkpoint.Checkpoint)
+	require.NoError(t, seed.Close())
+
+	seedBytes, err := os.ReadFile(seedPath)
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, len(seedBytes), 100)
+	directPath := filepath.Join(dir, "direct.db")
+	historyPath := filepath.Join(dir, "history.db")
+	require.NoError(t, os.WriteFile(directPath, seedBytes, 0o600))
+	historyBytes := append([]byte(nil), seedBytes...)
+	changeCounter := binary.BigEndian.Uint32(historyBytes[24:28]) + 1
+	binary.BigEndian.PutUint32(historyBytes[24:28], changeCounter)
+	binary.BigEndian.PutUint32(historyBytes[92:96], changeCounter)
+	schemaCookie := binary.BigEndian.Uint32(historyBytes[40:44]) + 1
+	binary.BigEndian.PutUint32(historyBytes[40:44], schemaCookie)
+	require.NoError(t, os.WriteFile(historyPath, historyBytes, 0o600))
+	require.NotEqual(t, seedBytes[24:28], historyBytes[24:28])
+	require.NotEqual(t, seedBytes[40:44], historyBytes[40:44])
+
+	buildSnapshot := func(dbPath string) []byte {
+		db, err := appdatabase.Open(dbPath, 1, 1)
+		require.NoError(t, err)
+		var count int
+		require.NoError(t, db.Raw("SELECT count(*) FROM entries").Scan(&count).Error)
+		require.Equal(t, 2, count)
+		require.NoError(t, normalizeSQLiteSchemaCookie(db))
+		snapshotPath, err := createCanonicalSQLiteSnapshot(db, dbPath)
+		require.NoError(t, err)
+		require.NoError(t, db.Close())
+		t.Cleanup(func() { require.NoError(t, os.Remove(snapshotPath)) })
+		snapshot, err := os.ReadFile(snapshotPath)
+		require.NoError(t, err)
+		return snapshot
+	}
+
+	direct := buildSnapshot(directPath)
+	withHistory := buildSnapshot(historyPath)
+	require.Equal(t, direct, withHistory)
+	require.Equal(
+		t,
+		binary.BigEndian.Uint32(direct[24:28]),
+		binary.BigEndian.Uint32(direct[92:96]),
+	)
+	// VACUUM INTO creates the destination schema and advances the normalized
+	// source cookie once, so every canonical snapshot starts at cookie 2.
+	require.Equal(t, uint32(2), binary.BigEndian.Uint32(direct[40:44]))
+}
+
+func TestProcessUnifiedDatabaseCanonicalizesFTSBatchHistory(t *testing.T) {
+	poems := make([]loader.PoemWithMeta, 1105)
+	for index := range poems {
+		poems[index] = loader.PoemWithMeta{
+			PoemData: loader.PoemData{
+				ID:         fmt.Sprintf("fixture-%04d", index),
+				Title:      fmt.Sprintf("测试诗题%04d", index),
+				Author:     "测试作者",
+				Paragraphs: []string{fmt.Sprintf("测试正文段落%04d", index)},
+			},
+			Dynasty:           "唐",
+			DatasetName:       "fixture",
+			DatasetKey:        "fixture",
+			SourceID:          fmt.Sprintf("fixture-%04d", index),
+			SourcePath:        "fixture.json",
+			SourceRecordIndex: index,
+		}
+	}
+
+	dir := t.TempDir()
+	batch300 := filepath.Join(dir, "batch-300.db")
+	batch1000 := filepath.Join(dir, "batch-1000.db")
+	require.NoError(t, processUnifiedDatabaseWithBatchSize(batch300, poems, nil, 4, 300))
+	require.NoError(t, processUnifiedDatabaseWithBatchSize(batch1000, poems, nil, 4, 1000))
+
+	first, err := os.ReadFile(batch300)
+	require.NoError(t, err)
+	second, err := os.ReadFile(batch1000)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+}
+
+func TestSearchIndexVerificationRejectsProductDrift(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "search-drift.db")
+	require.NoError(t, processUnifiedDatabaseWithBatchSize(dbPath, []loader.PoemWithMeta{{
+		PoemData: loader.PoemData{
+			ID:         "fixture",
+			Title:      "原始诗题",
+			Author:     "测试作者",
+			Paragraphs: []string{"原始正文"},
+		},
+		Dynasty:           "唐",
+		DatasetName:       "fixture",
+		DatasetKey:        "fixture",
+		SourceID:          "fixture",
+		SourcePath:        "fixture.json",
+		SourceRecordIndex: 0,
+	}}, nil, 1, 1000))
+
+	db, err := appdatabase.Open(dbPath, 1, 1)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	trigger := appdatabase.PoemsTable(appdatabase.LangHans) + "_fts_au"
+	require.NoError(t, db.Exec("DROP TRIGGER "+trigger).Error)
+	require.NoError(t, db.Exec(
+		"UPDATE "+appdatabase.PoemsTable(appdatabase.LangHans)+" SET title = ?",
+		"未同步诗题",
+	).Error)
+	// FTS5's own integrity-check only checks its shadow tables, not the base
+	// products table. Our explicit relational verification must catch drift.
+	ftsTable := appdatabase.PoemsFtsTable(appdatabase.LangHans)
+	require.NoError(t, db.Exec(fmt.Sprintf(
+		"INSERT INTO %[1]s(%[1]s) VALUES('integrity-check')",
+		ftsTable,
+	)).Error)
+	require.ErrorContains(t, verifySearchIndexMatchesProducts(db.DB, appdatabase.LangHans), "differs")
 }
 
 func TestInstallOutputPairRollsBackWhenSecondInstallRenameFails(t *testing.T) {

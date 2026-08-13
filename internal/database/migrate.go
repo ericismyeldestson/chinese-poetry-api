@@ -426,8 +426,10 @@ func (db *DB) migrateFtsForLang(lang Lang) error {
 	// 仅在首次创建时回填：已有数据早于触发器存在，需要补进索引；
 	// 而此前已存在的表本身就是最新的，没必要在每次迁移时都做一遍全量重建。
 	//
-	// FTS5 内置的 'rebuild' 命令要求 fts5 表的列名与内容表的真实列一一对应，
-	// 而 content_text 是派生表达式而非存储列，因此这里用触发器里相同的表达式手动回填。
+	// external-content FTS5 的 'rebuild' 要求虚拟表列与内容表真实列对应；
+	// content_text 是派生表达式，因此首次迁移仍需使用相同表达式手动回填。
+	// 本表实际为 self-contained；当它已有自己的 _content 影子表后，发布处理器
+	// 可安全使用 rebuild 规范化最终 segment 布局。
 	if existingCount == 0 {
 		backfillSQL := fmt.Sprintf(`INSERT INTO %[1]s(rowid, title, content_text)
 			SELECT id, title, `+fmt.Sprintf(contentTextExpr, poemTable)+`

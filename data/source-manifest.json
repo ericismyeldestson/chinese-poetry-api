@@ -30,7 +30,7 @@
     "min_authors_per_language": 13000,
     "canonical_id_prefix": "cpa:poem:v2:sha256:",
     "canonical_author_id_prefix": "cpa:author:v1:sha256:",
-    "expected_database_sha256": "1192b9e6fae008a7bfe7a66a86d071e372c03c547ebc3cca3982f4c860e0b769",
+    "expected_database_sha256": "47ab189c42af4e598726a7fa4fdc62a6a02f304d9ce19d6be954e5670f59e001",
     "expected_logical_digests": {
       "poem_products_zh_hans": "e0861786b2be67086df40f7e08dd4c112bebc0413789d30db238a070c271d31d",
       "poem_products_zh_hant": "ea6e42ab441b88ad3cec6fafa5cee2aefdb8c897ce9f0c0caf0c8a770bd40925",

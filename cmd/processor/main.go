@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 	"github.com/ericismyeldestson/chinese-poetry-api/internal/loader"
@@ -497,6 +498,16 @@ func stageJSONReport(destination string, report loader.LoadReport) (string, erro
 
 // processUnifiedDatabase 重建数据库，并依次导入简体与繁体两套数据。
 func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, rejections []database.SourceRejection, workers int) error {
+	return processUnifiedDatabaseWithBatchSize(dbPath, poems, rejections, workers, 0)
+}
+
+func processUnifiedDatabaseWithBatchSize(
+	dbPath string,
+	poems []loader.PoemWithMeta,
+	rejections []database.SourceRejection,
+	workers int,
+	batchSize int,
+) error {
 	// 删除已存在的数据库文件
 	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove existing database: %w", err)
@@ -507,7 +518,12 @@ func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, rejectio
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	databaseClosed := false
+	defer func() {
+		if !databaseClosed {
+			_ = db.Close()
+		}
+	}()
 
 	// 执行迁移，创建简繁两套表
 	logger.Info("Creating database schema (simplified + traditional tables)")
@@ -522,6 +538,7 @@ func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, rejectio
 	logger.Info("Processing language variant", zap.String("lang", "zh-Hans"))
 	repoSimp := database.NewRepositoryWithLang(db, database.LangHans)
 	procSimp := processor.NewProcessor(repoSimp, workers, false)
+	procSimp.SetBatchSize(batchSize)
 	if err := procSimp.Process(poems); err != nil {
 		return fmt.Errorf("failed to process simplified poems: %w", err)
 	}
@@ -530,6 +547,7 @@ func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, rejectio
 	logger.Info("Processing language variant", zap.String("lang", "zh-Hant"))
 	repoTrad := database.NewRepositoryWithLang(db, database.LangHant)
 	procTrad := processor.NewProcessor(repoTrad, workers, true)
+	procTrad.SetBatchSize(batchSize)
 	if err := procTrad.Process(poems); err != nil {
 		return fmt.Errorf("failed to process traditional poems: %w", err)
 	}
@@ -576,44 +594,245 @@ func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, rejectio
 
 	// 优化数据库文件
 	logger.Info("Optimizing database")
-	if err := db.Exec("VACUUM").Error; err != nil {
-		return fmt.Errorf("failed to vacuum generated database: %w", err)
+	if err := rebuildDeterministicSearchIndexes(db); err != nil {
+		return fmt.Errorf("failed to rebuild deterministic search indexes: %w", err)
 	}
-
 	if err := db.Exec("ANALYZE").Error; err != nil {
 		return fmt.Errorf("failed to analyze generated database: %w", err)
 	}
+	if err := normalizeSQLiteStatistics(db); err != nil {
+		return fmt.Errorf("failed to normalize generated database statistics: %w", err)
+	}
+	if err := normalizeSQLiteSchemaCookie(db); err != nil {
+		return fmt.Errorf("failed to normalize generated database schema cookie: %w", err)
+	}
 
-	// database.Open uses WAL for server concurrency. Release assets, however,
-	// must be self-contained single files: checkpoint every page and return to
-	// DELETE journaling before the connection closes and the staged file moves.
-	// wal_checkpoint returns one result row. Consume it explicitly; executing
-	// the row-producing pragma through Exec can leave the sqlite statement open
-	// long enough for the following journal_mode change to be rejected as being
-	// inside a transaction.
-	var checkpoint struct {
-		Busy       int `gorm:"column:busy"`
-		Log        int `gorm:"column:log"`
-		Checkpoint int `gorm:"column:checkpointed"`
+	// VACUUM INTO creates a fresh file instead of mutating the WAL-backed build
+	// database. Besides compacting the database, this resets SQLite header
+	// counters that otherwise depend on checkpoint history and worker/batch
+	// timing. Together with the canonical sqlite_stat1 order above, the fresh
+	// snapshot is byte-reproducible across the supported build environments.
+	snapshotPath, err := createCanonicalSQLiteSnapshot(db, dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to create canonical database snapshot: %w", err)
 	}
-	if err := db.Raw("PRAGMA wal_checkpoint(TRUNCATE)").Scan(&checkpoint).Error; err != nil {
-		return fmt.Errorf("failed to checkpoint generated database: %w", err)
+	snapshotInstalled := false
+	defer func() {
+		if !snapshotInstalled {
+			_ = os.Remove(snapshotPath)
+		}
+	}()
+
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("failed to close generated database before snapshot install: %w", err)
 	}
-	if checkpoint.Busy != 0 || checkpoint.Log != checkpoint.Checkpoint {
-		return fmt.Errorf(
-			"generated database checkpoint incomplete: busy=%d log=%d checkpointed=%d",
-			checkpoint.Busy, checkpoint.Log, checkpoint.Checkpoint,
-		)
+	databaseClosed = true
+	for _, path := range []string{dbPath + "-wal", dbPath + "-shm"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove superseded generated database file %s: %w", path, err)
+		}
 	}
-	var journalMode string
-	if err := db.Raw("PRAGMA journal_mode=DELETE").Scan(&journalMode).Error; err != nil {
-		return fmt.Errorf("failed to make generated database portable: %w", err)
+	// On the supported POSIX release builders, renaming within one directory
+	// atomically replaces the disposable staged build database. If a platform
+	// cannot replace an existing destination, Rename fails while preserving the
+	// original staged database; do not create a remove-then-rename crash window.
+	if err := os.Rename(snapshotPath, dbPath); err != nil {
+		return fmt.Errorf("failed to install canonical database snapshot: %w", err)
 	}
-	if journalMode != "delete" {
-		return fmt.Errorf("generated database journal mode is %q, expected delete", journalMode)
+	snapshotInstalled = true
+	if err := syncOutputDirectory(dbPath); err != nil {
+		return fmt.Errorf("failed to sync canonical database snapshot: %w", err)
 	}
 
 	return nil
+}
+
+// normalizeSQLiteStatistics gives sqlite_stat1 a canonical rowid order.
+// Query planners treat these rows as an unordered set, but their physical
+// insertion order affects the bytes written by VACUUM. ANALYZE may emit the
+// same rows in a different order across SQLite builds and operating systems.
+func normalizeSQLiteStatistics(db *database.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var statisticTables []string
+		if err := tx.Raw(
+			`SELECT name FROM sqlite_schema
+			 WHERE type = 'table' AND name GLOB 'sqlite_stat*'
+			 ORDER BY name COLLATE BINARY`,
+		).Scan(&statisticTables).Error; err != nil {
+			return fmt.Errorf("list SQLite statistics tables: %w", err)
+		}
+		if len(statisticTables) != 1 || statisticTables[0] != "sqlite_stat1" {
+			return fmt.Errorf("unsupported SQLite statistics tables: %v", statisticTables)
+		}
+
+		statements := []string{
+			`CREATE TEMP TABLE cpa_ordered_sqlite_stat1 (
+				tbl TEXT NOT NULL,
+				idx TEXT,
+				stat TEXT NOT NULL
+			)`,
+			`INSERT INTO cpa_ordered_sqlite_stat1 (tbl, idx, stat)
+			 SELECT tbl, idx, stat
+			 FROM sqlite_stat1
+			 ORDER BY tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY`,
+			`DELETE FROM sqlite_stat1`,
+			`INSERT INTO sqlite_stat1 (tbl, idx, stat)
+			 SELECT tbl, idx, stat
+			 FROM cpa_ordered_sqlite_stat1
+			 ORDER BY tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY`,
+			`DROP TABLE cpa_ordered_sqlite_stat1`,
+		}
+		for index, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf("statistics normalization statement %d: %w", index+1, err)
+			}
+		}
+		return nil
+	})
+}
+
+func rebuildDeterministicSearchIndexes(db *database.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, lang := range []database.Lang{database.LangHans, database.LangHant} {
+			table := database.PoemsFtsTable(lang)
+			// These are self-contained FTS5 tables. The special rebuild command
+			// recreates their segment trees in rowid order from the shadow content
+			// table, removing INSERT statement boundaries from the physical asset.
+			statement := fmt.Sprintf("INSERT INTO %[1]s(%[1]s) VALUES('rebuild')", table)
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf("rebuild %s: %w", table, err)
+			}
+			integrityCheck := fmt.Sprintf("INSERT INTO %[1]s(%[1]s) VALUES('integrity-check')", table)
+			if err := tx.Exec(integrityCheck).Error; err != nil {
+				return fmt.Errorf("integrity-check %s: %w", table, err)
+			}
+			if err := verifySearchIndexMatchesProducts(tx, lang); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func verifySearchIndexMatchesProducts(tx *gorm.DB, lang database.Lang) error {
+	poemsTable := database.PoemsTable(lang)
+	ftsTable := database.PoemsFtsTable(lang)
+	query := fmt.Sprintf(`
+		SELECT count(*) FROM (
+			SELECT p.id
+			FROM %[1]s AS p
+			LEFT JOIN %[2]s AS f ON f.rowid = p.id
+			WHERE f.rowid IS NULL
+			   OR f.title IS NOT p.title
+			   OR f.content_text IS NOT (
+				 SELECT COALESCE(group_concat(value, ''), '')
+				 FROM json_each(p.content)
+			   )
+			UNION ALL
+			SELECT f.rowid
+			FROM %[2]s AS f
+			LEFT JOIN %[1]s AS p ON p.id = f.rowid
+			WHERE p.id IS NULL
+		)`, poemsTable, ftsTable)
+	var mismatches int64
+	if err := tx.Raw(query).Scan(&mismatches).Error; err != nil {
+		return fmt.Errorf("compare %s with %s: %w", ftsTable, poemsTable, err)
+	}
+	if mismatches != 0 {
+		return fmt.Errorf("%s differs from %s in %d rows", ftsTable, poemsTable, mismatches)
+	}
+	return nil
+}
+
+func normalizeSQLiteSchemaCookie(db *database.DB) error {
+	// SQLite increments the file-header schema cookie for DDL history. All DDL
+	// is complete and this builder owns a single connection, so normalize the
+	// cookie before creating the immutable release snapshot. This is distinct
+	// from the application's schema_version row in metadata.
+	if err := db.Exec("PRAGMA schema_version = 1").Error; err != nil {
+		return err
+	}
+	var schemaCookie int
+	if err := db.Raw("PRAGMA schema_version").Scan(&schemaCookie).Error; err != nil {
+		return err
+	}
+	if schemaCookie != 1 {
+		return fmt.Errorf("SQLite schema cookie is %d, expected 1", schemaCookie)
+	}
+	return nil
+}
+
+func createCanonicalSQLiteSnapshot(db *database.DB, dbPath string) (string, error) {
+	temporary, err := os.CreateTemp(
+		filepath.Dir(dbPath),
+		"."+filepath.Base(dbPath)+".vacuum-*",
+	)
+	if err != nil {
+		return "", err
+	}
+	snapshotPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(snapshotPath)
+		return "", err
+	}
+	if err := os.Remove(snapshotPath); err != nil {
+		return "", err
+	}
+	snapshotReady := false
+	defer func() {
+		if !snapshotReady {
+			_ = os.Remove(snapshotPath)
+		}
+	}()
+
+	if err := db.Exec("VACUUM INTO ?", snapshotPath).Error; err != nil {
+		return "", err
+	}
+	info, err := os.Stat(snapshotPath)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return "", fmt.Errorf("VACUUM INTO did not produce a non-empty regular file")
+	}
+	snapshotFile, err := os.Open(snapshotPath)
+	if err != nil {
+		return "", err
+	}
+	if err := snapshotFile.Sync(); err != nil {
+		_ = snapshotFile.Close()
+		return "", err
+	}
+	if err := snapshotFile.Close(); err != nil {
+		return "", err
+	}
+
+	snapshot, err := database.OpenReadOnly(snapshotPath, 1, 1)
+	if err != nil {
+		return "", err
+	}
+	var journalMode string
+	queryErr := snapshot.Raw("PRAGMA journal_mode").Scan(&journalMode).Error
+	closeErr := snapshot.Close()
+	if queryErr != nil {
+		return "", queryErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if journalMode != "delete" {
+		return "", fmt.Errorf("canonical snapshot journal mode is %q, expected delete", journalMode)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(snapshotPath + suffix); err == nil {
+			return "", fmt.Errorf("canonical snapshot unexpectedly created %s sidecar", suffix)
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+
+	snapshotReady = true
+	return snapshotPath, nil
 }
 
 // printStatistics 打印各语言变体下的数据量统计。
