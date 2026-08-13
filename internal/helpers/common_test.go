@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 func TestParseOptionalInt64(t *testing.T) {

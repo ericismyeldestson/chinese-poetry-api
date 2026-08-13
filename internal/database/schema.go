@@ -2,7 +2,7 @@ package database
 
 const (
 	// SchemaVersion 是当前的数据库结构版本号
-	SchemaVersion = 1
+	SchemaVersion = 2
 )
 
 // InitialDynastiesSQL 是朝代表的初始数据，
@@ -23,7 +23,7 @@ var InitialDynastiesSQL = `INSERT OR IGNORE INTO dynasties (name, name_en, start
 // InitialPoetryTypesSQL 是体裁表的初始数据。
 // ID 按语义分段，便于归类与后续扩展：
 //
-//	10-19：诗，含唐诗、古诗等
+//	10-19：诗，含唐宋等朝代的格律诗、乐府等
 //	20-29：词，含宋词、五代词等
 //	30-39：曲，即元曲
 //	40-49：蒙学
@@ -33,14 +33,14 @@ var InitialDynastiesSQL = `INSERT OR IGNORE INTO dynasties (name, name_en, start
 //	80-89：四书五经
 //	99：其他
 var InitialPoetryTypesSQL = `INSERT OR IGNORE INTO poetry_types (id, name, category, lines, chars_per_line, description) VALUES
-	(10, '唐诗', '唐诗', NULL, NULL, '诗'),
-	(11, '五言绝句', '唐诗', 4, 5, '四句，每句五字'),
-	(12, '七言绝句', '唐诗', 4, 7, '四句，每句七字'),
-	(13, '五言律诗', '唐诗', 8, 5, '八句，每句五字'),
-	(14, '七言律诗', '唐诗', 8, 7, '八句，每句七字'),
-	(15, '五言古诗', '唐诗', NULL, 5, '不限句数，每句五字'),
-	(16, '七言古诗', '唐诗', NULL, 7, '不限句数，每句七字'),
-	(17, '乐府诗', '唐诗', NULL, NULL, '不限句数，不限字数'),
+	(10, '唐诗', '诗', NULL, NULL, '诗'),
+	(11, '五言绝句', '诗', 4, 5, '四句，每句五字'),
+	(12, '七言绝句', '诗', 4, 7, '四句，每句七字'),
+	(13, '五言律诗', '诗', 8, 5, '八句，每句五字'),
+	(14, '七言律诗', '诗', 8, 7, '八句，每句七字'),
+	(15, '五言古诗', '诗', NULL, 5, '不限句数，每句五字'),
+	(16, '七言古诗', '诗', NULL, 7, '不限句数，每句七字'),
+	(17, '乐府诗', '诗', NULL, NULL, '不限句数，不限字数'),
 	(20, '宋词', '宋词', NULL, NULL, '长短句'),
 	(21, '五代词', '词', NULL, NULL, '长短句'),
 	(30, '元曲', '曲', NULL, NULL, '散曲'),

@@ -8,7 +8,10 @@ import (
 // 诗词体裁相关常量。
 const (
 	// 大类
-	CategoryPoetry = "唐诗"
+	// CategoryPoetry describes the literary form family, not a dynasty. Song,
+	// Wei-Jin, and other poems may share the same regulated-verse forms, so using
+	// "唐诗" here incorrectly labels non-Tang works in the public API.
+	CategoryPoetry = "诗"
 	CategoryCi     = "宋词"
 	CategoryOther  = "其他"
 
@@ -45,7 +48,7 @@ func ClassifyPoetryType(paragraphs []string, rhythmic string) PoetryTypeInfo {
 //  1. 按数据集直接映射（诗经、楚辞、论语、孟子、元曲等）
 //  2. 有词牌名（rhythmic）则判为词（宋词等）
 //  3. 按标题识别乐府诗
-//  4. 按结构分析判定（唐诗）
+//  4. 按结构分析判定（诗）
 func ClassifyPoetryTypeWithDataset(paragraphs []string, rhythmic string, datasetKey string, title string) PoetryTypeInfo {
 	// 优先级 1：按数据集 key 直接映射
 	if typeInfo, ok := getTypeFromDataset(datasetKey); ok {
@@ -64,11 +67,11 @@ func ClassifyPoetryTypeWithDataset(paragraphs []string, rhythmic string, dataset
 	if title != "" && isYuefuPoem(title) {
 		return PoetryTypeInfo{
 			TypeName: "乐府诗",
-			Category: "唐诗",
+			Category: CategoryPoetry,
 		}
 	}
 
-	// 优先级 4：按结构判定唐诗类别
+	// 优先级 4：按结构判定诗歌体裁
 	if len(paragraphs) == 0 {
 		return PoetryTypeInfo{
 			TypeName: TypeOther,
@@ -157,7 +160,7 @@ func getTypeFromDataset(datasetKey string) (PoetryTypeInfo, bool) {
 		},
 		"caocao": {
 			TypeName: "乐府诗",
-			Category: "唐诗",
+			Category: CategoryPoetry,
 		},
 	}
 

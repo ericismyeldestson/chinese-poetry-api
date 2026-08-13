@@ -5,7 +5,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // DynastyHandler 处理朝代相关的请求。

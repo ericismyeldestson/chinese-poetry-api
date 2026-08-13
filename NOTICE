@@ -1,0 +1,84 @@
+Chinese Poetry API — Notices
+================================
+
+Current project home:
+https://github.com/ericismyeldestson/chinese-poetry-api
+
+Software provenance
+-------------------
+
+This repository was forked on 2026-08-12 from
+https://github.com/palemoky/chinese-poetry-api and retains the complete Git
+history. The fork began independent development from commit
+1a018967b24eba393a6ab0f8b51e7a28b3eff168.
+
+The API program is distributed under GNU GPL version 3. The original license
+is retained in LICENSE. Distributors of modified source, binaries, or container
+images must preserve applicable notices and satisfy the GPL requirements for
+Corresponding Source. Files added or modified by this project remain part of
+the GPL-covered program unless a file states otherwise.
+
+Data provenance
+---------------
+
+The initial poetry corpus is sourced from:
+
+  Repository: https://github.com/chinese-poetry/chinese-poetry.git
+  Commit:     909646524737b70544ee7ae17cb76868a0bc8a55
+  License:    MIT
+
+The source MIT license is retained in poetry-data/LICENSE after initializing
+the submodule and copied verbatim to licenses/chinese-poetry-MIT.txt for
+source archives, containers, and data releases. Generated database releases
+must include this NOTICE and the copied license plus a
+machine-readable data-source manifest identifying the exact source and
+pipeline revisions. They also include a deterministic source report accounting
+for every loaded or explicitly excluded JSON file and every accepted or
+rejected source record.
+
+The source corpus is an Internet-assembled collection. Its presence in this
+project does not establish textual, bibliographic, attribution, or historical
+accuracy. Generated databases are not authoritative critical editions.
+
+Chinese-variant conversion
+--------------------------
+
+Simplified/Traditional conversion uses:
+
+  Go module:  github.com/fhluo/hanconv/go v0.3.0
+  Tag:        go/v0.3.0
+  Commit:     45425fcfe5d3ee871e0de8706677b2be942e3bfb
+  License:    MIT
+  Copyright:  Copyright (c) 2022 fhluo
+
+The complete hanconv MIT license is retained in licenses/hanconv-MIT.txt.
+
+That module embeds 13 dictionary files derived from Open Chinese Convert
+(OpenCC). At hanconv v0.3.0, those dictionary payloads match OpenCC commit
+5810b60222fe3c0d15a7ab61a3e054bb5b225c57 and are distributed under the
+Apache License 2.0. The complete license is retained in
+licenses/opencc-dictionaries-Apache-2.0.txt.
+
+  Dictionary source: https://github.com/BYVoid/OpenCC
+  License:           Apache License 2.0
+
+The release container also includes a machine-readable inventory at
+`/usr/share/licenses/chinese-poetry-api/go-dependencies.csv` and the license or
+notice files detected for every package reachable from the server binary under
+`/usr/share/licenses/chinese-poetry-api/go-dependencies/`. The inventory is
+generated with `go-licenses v1.6.0` and is checked in CI. Container base-image
+and installed Alpine packages remain subject to the licenses shipped by
+Alpine. This notice is an engineering provenance record, not legal advice.
+
+For the two reachable MPL-2.0 components, the same directory also carries the
+complete source trees selected by `go-licenses save`:
+
+  github.com/go-sql-driver/mysql v1.9.3
+  https://github.com/go-sql-driver/mysql/tree/v1.9.3
+
+  github.com/hashicorp/golang-lru/v2 v2.0.7
+  https://github.com/hashicorp/golang-lru/tree/v2.0.7
+
+These copies are provided with the image so recipients do not have to rely on
+the continued availability of a third-party hosting service to inspect the
+MPL-covered source included in the linked program.

@@ -1,5 +1,16 @@
 package database
 
+import (
+	"errors"
+
+	"gorm.io/gorm"
+)
+
+// ErrAmbiguousAuthor is returned when a display name maps to more than one
+// dynasty-scoped author identity. Callers must add a dynasty or use author_id;
+// silently selecting the first row would return another person's work.
+var ErrAmbiguousAuthor = errors.New("author name is ambiguous across dynasties")
+
 // 本文件包含供 REST API handler 使用的补充查询方法。
 
 // GetAuthorsWithStats 返回作者列表及各自的作品数量。
@@ -81,11 +92,28 @@ func (r *Repository) GetAuthorByID(id int64) (*Author, error) {
 
 // GetAuthorByName 按姓名查询作者。
 func (r *Repository) GetAuthorByName(name string) (*Author, error) {
-	var author Author
-	err := r.db.Table(r.authorsTable()).Where("name = ?", name).First(&author).Error
-	if err != nil {
+	return r.GetAuthorByNameAndDynasty(name, nil)
+}
+
+// GetAuthorByNameAndDynasty resolves the composite author identity. When no
+// dynasty is supplied, a name remains backward-compatible only if it resolves
+// to exactly one row.
+func (r *Repository) GetAuthorByNameAndDynasty(name string, dynastyID *int64) (*Author, error) {
+	query := r.db.Table(r.authorsTable()).Where("name = ?", name)
+	if dynastyID != nil {
+		query = query.Where("dynasty_id = ?", *dynastyID)
+	}
+	var authors []Author
+	if err := query.Order("id ASC").Limit(2).Find(&authors).Error; err != nil {
 		return nil, err
 	}
+	if len(authors) == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	if len(authors) > 1 {
+		return nil, ErrAmbiguousAuthor
+	}
+	author := authors[0]
 
 	// 加载所属朝代
 	if author.DynastyID != nil {

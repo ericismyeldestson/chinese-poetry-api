@@ -15,8 +15,17 @@ type CachedRepository struct {
 	typeCache   map[string]int64
 	typeCacheMu sync.RWMutex
 
-	authorCache   map[string]int64
+	authorCache   map[authorCacheKey]int64
 	authorCacheMu sync.RWMutex
+}
+
+// authorCacheKey mirrors the database identity rule. A name alone is not an
+// author identity: the pinned corpus contains hundreds of identical display
+// names attached to different dynasties.
+type authorCacheKey struct {
+	canonicalID string
+	name        string
+	dynastyID   int64
 }
 
 // NewCachedRepository 创建带缓存的仓储。
@@ -25,7 +34,7 @@ func NewCachedRepository(repo *Repository) *CachedRepository {
 		Repository:   repo,
 		dynastyCache: make(map[string]int64),
 		typeCache:    make(map[string]int64),
-		authorCache:  make(map[string]int64),
+		authorCache:  make(map[authorCacheKey]int64),
 	}
 }
 
@@ -124,9 +133,9 @@ func (r *CachedRepository) GetPoetryTypeIDs(names []string) ([]int64, error) {
 
 // GetOrCreateAuthor 查询或创建作者，结果带缓存。
 func (r *CachedRepository) GetOrCreateAuthor(name string, dynastyID int64) (int64, error) {
-	// 先查缓存，作者名唯一，直接用作 key
+	key := authorCacheKey{name: name, dynastyID: dynastyID}
 	r.authorCacheMu.RLock()
-	if id, ok := r.authorCache[name]; ok {
+	if id, ok := r.authorCache[key]; ok {
 		r.authorCacheMu.RUnlock()
 		return id, nil
 	}
@@ -140,9 +149,29 @@ func (r *CachedRepository) GetOrCreateAuthor(name string, dynastyID int64) (int6
 
 	// 结果写入缓存
 	r.authorCacheMu.Lock()
-	r.authorCache[name] = id
+	r.authorCache[key] = id
 	r.authorCacheMu.Unlock()
 
+	return id, nil
+}
+
+// GetOrCreateCanonicalAuthor caches the shared cross-language author identity.
+func (r *CachedRepository) GetOrCreateCanonicalAuthor(canonicalID, name string, dynastyID int64) (int64, error) {
+	key := authorCacheKey{canonicalID: canonicalID, name: name, dynastyID: dynastyID}
+	r.authorCacheMu.RLock()
+	if id, ok := r.authorCache[key]; ok {
+		r.authorCacheMu.RUnlock()
+		return id, nil
+	}
+	r.authorCacheMu.RUnlock()
+
+	id, err := r.Repository.GetOrCreateCanonicalAuthor(canonicalID, name, dynastyID)
+	if err != nil {
+		return 0, err
+	}
+	r.authorCacheMu.Lock()
+	r.authorCache[key] = id
+	r.authorCacheMu.Unlock()
 	return id, nil
 }
 
@@ -157,7 +186,7 @@ func (r *CachedRepository) ClearCache() {
 	r.typeCacheMu.Unlock()
 
 	r.authorCacheMu.Lock()
-	r.authorCache = make(map[string]int64)
+	r.authorCache = make(map[authorCacheKey]int64)
 	r.authorCacheMu.Unlock()
 }
 

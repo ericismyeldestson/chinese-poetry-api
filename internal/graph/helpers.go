@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/helpers"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/helpers"
 )
 
 // Pagination 保存解析后的分页参数。
@@ -19,6 +19,7 @@ type Pagination struct {
 const (
 	defaultPage     = 1
 	defaultPageSize = 20
+	maxPage         = 1000
 	maxPageSize     = 100
 )
 
@@ -32,6 +33,9 @@ func parsePagination(page, pageSize *int) (Pagination, error) {
 	if page != nil {
 		if *page < 1 {
 			return Pagination{}, fmt.Errorf("page must be at least 1, got %d", *page)
+		}
+		if *page > maxPage {
+			return Pagination{}, fmt.Errorf("page must be at most %d, got %d", maxPage, *page)
 		}
 		p = *page
 	}

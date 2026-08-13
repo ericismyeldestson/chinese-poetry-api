@@ -1,15 +1,16 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/api/searchquery"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // PoemHandler 处理诗词相关的请求。
@@ -83,9 +84,13 @@ func (h *PoemHandler) SearchPoems(c *gin.Context) {
 	}
 	repo := h.repo.WithLang(lang)
 
-	query := c.Query(queryQuery)
-	if query == "" {
+	query, err := searchquery.Normalize(c.Query(queryQuery))
+	if errors.Is(err, searchquery.ErrEmpty) {
 		respondError(c, http.StatusBadRequest, "query parameter 'q' is required")
+		return
+	}
+	if err != nil {
+		respondError(c, http.StatusBadRequest, err.Error())
 		return
 	}
 
@@ -95,13 +100,22 @@ func (h *PoemHandler) SearchPoems(c *gin.Context) {
 			"; supported: "+strings.Join(searchTypes, ", "))
 		return
 	}
+	if searchType != "author" {
+		if err := searchquery.ValidateIndexedLength(query); err != nil {
+			respondError(c, http.StatusBadRequest, err.Error())
+			return
+		}
+	} else if err := searchquery.ValidateLiteralSubstring(query); err != nil {
+		respondError(c, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	pagination, ok := ParsePagination(c)
 	if !ok {
 		return
 	}
 
-	poems, total, err := repo.SearchPoems(query, searchType, pagination.Page, pagination.PageSize)
+	poems, total, err := repo.SearchPoems(c.Request.Context(), query, searchType, pagination.Page, pagination.PageSize)
 	if err != nil {
 		respondError(c, http.StatusInternalServerError, "search failed")
 		return
@@ -135,7 +149,25 @@ type poemFilters struct {
 func parsePoemFilters(c *gin.Context, repo *database.Repository) (poemFilters, bool) {
 	var filters poemFilters
 
-	// 作者过滤：按 ID 或名称
+	// Resolve dynasty first because author identity is (name, dynasty).
+	dynastyID, ok := parseInt64Query(c, queryDynastyID)
+	if !ok {
+		return poemFilters{}, false
+	}
+	switch {
+	case dynastyID != nil:
+		filters.dynastyID = dynastyID
+	case c.Query(queryDynasty) != "":
+		dynasty, err := repo.GetDynastyByName(c.Query(queryDynasty))
+		if err != nil {
+			respondError(c, http.StatusNotFound, "dynasty not found")
+			return poemFilters{}, false
+		}
+		filters.dynastyID = &dynasty.ID
+	}
+
+	// A name-only lookup is accepted only when it is unambiguous. Otherwise the
+	// client must add dynasty/dynasty_id or use the exact author_id.
 	authorID, ok := parseInt64Query(c, queryAuthorID)
 	if !ok {
 		return poemFilters{}, false
@@ -144,7 +176,11 @@ func parsePoemFilters(c *gin.Context, repo *database.Repository) (poemFilters, b
 	case authorID != nil:
 		filters.authorID = authorID
 	case c.Query(queryAuthor) != "":
-		author, err := repo.GetAuthorByName(c.Query(queryAuthor))
+		author, err := repo.GetAuthorByNameAndDynasty(c.Query(queryAuthor), filters.dynastyID)
+		if errors.Is(err, database.ErrAmbiguousAuthor) {
+			respondError(c, http.StatusConflict, "ambiguous author name; add dynasty/dynasty_id or use author_id")
+			return poemFilters{}, false
+		}
 		if err != nil {
 			respondError(c, http.StatusNotFound, "author not found")
 			return poemFilters{}, false
@@ -175,23 +211,6 @@ func parsePoemFilters(c *gin.Context, repo *database.Repository) (poemFilters, b
 		filters.typeIDs = ids
 	}
 
-	// 朝代过滤：按 ID 或名称
-	dynastyID, ok := parseInt64Query(c, queryDynastyID)
-	if !ok {
-		return poemFilters{}, false
-	}
-	switch {
-	case dynastyID != nil:
-		filters.dynastyID = dynastyID
-	case c.Query(queryDynasty) != "":
-		dynasty, err := repo.GetDynastyByName(c.Query(queryDynasty))
-		if err != nil {
-			respondError(c, http.StatusNotFound, "dynasty not found")
-			return poemFilters{}, false
-		}
-		filters.dynastyID = &dynasty.ID
-	}
-
 	return filters, true
 }
 
@@ -200,9 +219,9 @@ func parsePoemFilters(c *gin.Context, repo *database.Repository) (poemFilters, b
 // 过滤条件可按名称：?author=李白&type=五言绝句&type=七言绝句&dynasty=唐
 // 也可按 ID：?author_id=123&type_id=456&type_id=789&dynasty_id=789
 //
-// 另支持飞花令式的单字检索：?char=春
-// char 只能与 lang 搭配，不能叠加作者、体裁、朝代过滤，
-// 因为它经由 FTS 正文索引选词，与本 handler 其余基于 ID 的过滤属于不同查询形态。
+// v2 公网接口禁用了原飞花令单字检索 ?char=春：单字模式无法使用 trigram
+// 索引，而旧实现每次做 COUNT 与随机 OFFSET 两次线性扫描。该参数保留用于返回
+// 明确的 410 Gone，避免旧客户端误把它当成普通随机查询。
 func (h *PoemHandler) RandomPoem(c *gin.Context) {
 	if !checkQueryParams(c, append([]string{queryLang, queryChar}, filterQueryKeys...)...) {
 		return
@@ -215,24 +234,11 @@ func (h *PoemHandler) RandomPoem(c *gin.Context) {
 	repo := h.repo.WithLang(lang)
 
 	if char := c.Query(queryChar); char != "" {
-		for _, key := range filterQueryKeys {
-			if c.Query(key) != "" {
-				respondError(c, http.StatusBadRequest, "char cannot be combined with author/type/dynasty filters")
-				return
-			}
-		}
-		if utf8.RuneCountInString(char) != 1 {
-			respondError(c, http.StatusBadRequest, "char must be a single character")
-			return
-		}
-
-		poem, err := repo.GetRandomPoemByChar(char)
-		if err != nil {
-			respondError(c, http.StatusNotFound, "no poems found containing the given character")
-			return
-		}
-
-		c.JSON(http.StatusOK, formatPoem(poem))
+		// A single-character LIKE pattern cannot use the FTS5 trigram index.
+		// The previous implementation performed both COUNT and random OFFSET
+		// scans, so this public path is disabled until a dedicated character
+		// index exists.
+		respondError(c, http.StatusGone, "char search is disabled because single-character queries cannot use the search index")
 		return
 	}
 

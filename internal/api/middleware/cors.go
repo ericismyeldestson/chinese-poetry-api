@@ -8,9 +8,12 @@ import (
 func CORS() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
+		// A wildcard origin cannot be combined with credentialed CORS. This API
+		// is public and does not use browser cookies, so omit the credentials
+		// header instead of advertising an invalid/insecure combination.
+		c.Writer.Header().Del("Access-Control-Allow-Credentials")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Accept")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)

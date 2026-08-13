@@ -3,40 +3,17 @@ package classifier
 import (
 	"fmt"
 
-	"github.com/liuzl/gocc"
+	hanconv "github.com/fhluo/hanconv/go"
 )
-
-// s2t 与 t2s 在 init() 中初始化一次，可并发使用：
-// 底层的 gocc.OpenCC.Convert 方法本身是并发安全的。
-var (
-	s2t *gocc.OpenCC // 简转繁
-	t2s *gocc.OpenCC // 繁转简
-)
-
-func init() {
-	var err error
-
-	// 初始化简转繁转换器
-	s2t, err = gocc.New("s2t")
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize s2t converter: %v", err))
-	}
-
-	// 初始化繁转简转换器
-	t2s, err = gocc.New("t2s")
-	if err != nil {
-		panic(fmt.Sprintf("failed to initialize t2s converter: %v", err))
-	}
-}
 
 // ToTraditional 把简体中文转为繁体。
 func ToTraditional(text string) (string, error) {
-	return s2t.Convert(text)
+	return hanconv.S2T(text), nil
 }
 
 // ToSimplified 把繁体中文转为简体。
 func ToSimplified(text string) (string, error) {
-	return t2s.Convert(text)
+	return hanconv.T2S(text), nil
 }
 
 // ToTraditionalArray 批量把字符串转为繁体。

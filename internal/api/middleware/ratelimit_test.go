@@ -35,9 +35,8 @@ func TestRateLimiterAllowsThenBlocks(t *testing.T) {
 	assert.Equal(t, []int{http.StatusOK, http.StatusOK, http.StatusTooManyRequests}, codes)
 }
 
-// TestRateLimiterEvictsIdleClients 覆盖限流器 map——它此前完全没有回收机制：
-// 每个出现过的客户端 IP 都会占一个条目，而 ClientIP 会信任转发头，
-// 等于让调用方控制 key 的取值范围。
+// TestRateLimiterEvictsIdleClients covers bounded lifecycle of per-client
+// state; every retained client key otherwise consumes memory until shutdown.
 func TestRateLimiterEvictsIdleClients(t *testing.T) {
 	rl := NewRateLimiter(10, 10)
 	defer rl.Stop()
@@ -48,17 +47,30 @@ func TestRateLimiterEvictsIdleClients(t *testing.T) {
 	require.Len(t, rl.limiters, 3)
 
 	// 闲置时长还不够，不应回收任何条目
-	rl.sweep(time.Now().Add(idleTTL / 2))
+	rl.sweep(time.Now().Add(rl.idleTTL / 2))
 	assert.Len(t, rl.limiters, 3)
 
 	// 时钟推进越过 TTL 期间，保持其中一个客户端处于活跃状态
-	future := time.Now().Add(idleTTL + time.Minute)
+	future := time.Now().Add(rl.idleTTL + time.Minute)
 	rl.limiters["192.0.2.2"].lastSeen = future
 
 	rl.sweep(future)
 	require.Len(t, rl.limiters, 1, "only the recently seen client should survive")
 	_, ok := rl.limiters["192.0.2.2"]
 	assert.True(t, ok)
+}
+
+func TestRateLimiterIdleTTLTracksSlowBucketRefill(t *testing.T) {
+	rl := NewRateLimiter(0.001, 2)
+	defer rl.Stop()
+	assert.GreaterOrEqual(t, rl.idleTTL, 2000*time.Second)
+
+	rl.getLimiter("192.0.2.10")
+	lastSeen := rl.limiters["192.0.2.10"].lastSeen
+	rl.sweep(lastSeen.Add(10 * time.Minute))
+	assert.Contains(t, rl.limiters, "192.0.2.10", "a partially refilled bucket must not be reset")
+	rl.sweep(lastSeen.Add(rl.idleTTL + time.Second))
+	assert.NotContains(t, rl.limiters, "192.0.2.10")
 }
 
 func TestRateLimiterSeparatesClients(t *testing.T) {
@@ -73,6 +85,21 @@ func TestRateLimiterSeparatesClients(t *testing.T) {
 	assert.True(t, a.Allow())
 	assert.False(t, a.Allow(), "first client exhausted its burst")
 	assert.True(t, b.Allow(), "second client is unaffected")
+}
+
+func TestRateLimiterCapsTrackedClients(t *testing.T) {
+	rl := NewRateLimiter(1, 1)
+	defer rl.Stop()
+	rl.maxKeys = 2
+
+	rl.getLimiter("192.0.2.1")
+	rl.getLimiter("192.0.2.2")
+	overflowA := rl.getLimiter("192.0.2.3")
+	overflowB := rl.getLimiter("192.0.2.4")
+
+	require.Len(t, rl.limiters, 2)
+	assert.Same(t, rl.overflow, overflowA)
+	assert.Same(t, overflowA, overflowB)
 }
 
 func TestRateLimiterConcurrentAccess(t *testing.T) {

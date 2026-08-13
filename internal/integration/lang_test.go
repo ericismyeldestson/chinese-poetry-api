@@ -1,11 +1,13 @@
 package integration
 
 import (
+	"context"
 	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,9 +15,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/graph"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/generated"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/generated"
 )
 
 // setupLangTestEnv 基于文件型数据库构建 GraphQL 测试客户端。
@@ -33,6 +35,9 @@ func setupLangTestEnv(t *testing.T) (*client.Client, *database.Repository) {
 	repo := database.NewRepository(db)
 	resolver := graph.NewResolver(db, repo)
 	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: resolver}))
+	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		return next(graph.WithLanguageState(ctx))
+	})
 
 	return client.New(srv), repo
 }
@@ -109,10 +114,10 @@ func TestGraphQLLangSelectsVariant(t *testing.T) {
 		var resp struct {
 			SearchPoems struct{ TotalCount int }
 		}
-		require.NoError(t, c.Post(`query { searchPoems(query: "繁體", lang: ZH_HANT) { totalCount } }`, &resp))
+		require.NoError(t, c.Post(`query { searchPoems(query: "繁體標", lang: ZH_HANT) { totalCount } }`, &resp))
 		assert.Equal(t, 1, resp.SearchPoems.TotalCount)
 
-		require.NoError(t, c.Post(`query { searchPoems(query: "繁體", lang: ZH_HANS) { totalCount } }`, &resp))
+		require.NoError(t, c.Post(`query { searchPoems(query: "繁體標", lang: ZH_HANS) { totalCount } }`, &resp))
 		assert.Equal(t, 0, resp.SearchPoems.TotalCount, "simplified table has no traditional title")
 	})
 
@@ -136,7 +141,7 @@ func TestSearchPoemsCursors(t *testing.T) {
 	for i := range 4 {
 		require.NoError(t, repo.InsertPoem(&database.Poem{
 			ID:        int64(i + 1),
-			Title:     "春日" + string(rune('A'+i)),
+			Title:     "春日诗" + string(rune('A'+i)),
 			Content:   datatypes.JSON([]byte(`["春风"]`)),
 			AuthorID:  &authorID,
 			DynastyID: &dynastyID,
@@ -156,7 +161,7 @@ func TestSearchPoemsCursors(t *testing.T) {
 				}
 			}
 		}
-		q := `query { searchPoems(query: "春日", page: ` + strconv.Itoa(n) + `, pageSize: 2) {
+		q := `query { searchPoems(query: "春日诗", page: ` + strconv.Itoa(n) + `, pageSize: 2) {
 			edges { cursor node { title } }
 			pageInfo { startCursor endCursor }
 		} }`

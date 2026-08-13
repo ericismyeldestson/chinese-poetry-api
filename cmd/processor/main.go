@@ -1,17 +1,20 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/loader"
-	"github.com/palemoky/chinese-poetry-api/internal/logger"
-	"github.com/palemoky/chinese-poetry-api/internal/processor"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/loader"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/logger"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/processor"
 )
 
 var (
@@ -51,6 +54,10 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	logger.Info("Loading poetry data", zap.String("config", configPath))
+	reportPath := outputDB + ".source-report.json"
+	if err := recoverOutputPair(outputDB, reportPath); err != nil {
+		return fmt.Errorf("failed to recover interrupted output installation: %w", err)
+	}
 
 	// 加载全部诗词数据
 	jsonLoader, err := loader.NewJSONLoader(configPath)
@@ -62,16 +69,68 @@ func run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("failed to load poems: %w", err)
 	}
+	accepted, rejections, err := processor.PartitionSources(poems)
+	if err != nil {
+		return fmt.Errorf("failed to partition source records: %w", err)
+	}
+	report, err := jsonLoader.FinalizeReport(poems)
+	if err != nil {
+		return fmt.Errorf("failed to finalize source report: %w", err)
+	}
+	if report.Totals.TotalRecords != len(poems) ||
+		report.Totals.AcceptedRecords != len(accepted) ||
+		report.Totals.RejectedRecords != len(rejections) {
+		return fmt.Errorf(
+			"source accounting mismatch: report total/accepted/rejected=%d/%d/%d, records=%d/%d/%d",
+			report.Totals.TotalRecords, report.Totals.AcceptedRecords, report.Totals.RejectedRecords,
+			len(poems), len(accepted), len(rejections),
+		)
+	}
 
-	logger.Info("Loaded poems from JSON files", zap.Int("count", len(poems)))
+	logger.Info("Loaded source records",
+		zap.Int("total", len(poems)),
+		zap.Int("accepted", len(accepted)),
+		zap.Int("rejected", len(rejections)),
+	)
+
+	// Build beside the destination and replace the live artifact only after every
+	// database and provenance gate passes. A failed rebuild therefore cannot
+	// destroy a previously verified database.
+	outputDir := filepath.Dir(outputDB)
+	tempDB, err := os.CreateTemp(outputDir, "."+filepath.Base(outputDB)+".build-*")
+	if err != nil {
+		return fmt.Errorf("failed to create staged database: %w", err)
+	}
+	tempDBPath := tempDB.Name()
+	if err := tempDB.Close(); err != nil {
+		return fmt.Errorf("failed to close staged database: %w", err)
+	}
+	defer func() {
+		_ = os.Remove(tempDBPath)
+		_ = os.Remove(tempDBPath + "-wal")
+		_ = os.Remove(tempDBPath + "-shm")
+	}()
 
 	// 生成同时包含简繁两套表的统一数据库
 	logger.Info("Processing unified database")
-	if err := processUnifiedDatabase(outputDB, poems, workers); err != nil {
+	if err := processUnifiedDatabase(tempDBPath, accepted, rejections, workers); err != nil {
 		return fmt.Errorf("failed to process database: %w", err)
 	}
 
-	logger.Info("Processing complete", zap.String("database", outputDB))
+	reportTempPath, err := stageJSONReport(reportPath, report)
+	if err != nil {
+		return fmt.Errorf("failed to stage source report: %w", err)
+	}
+	defer func() { _ = os.Remove(reportTempPath) }()
+
+	if err := installOutputPair(tempDBPath, outputDB, reportTempPath, reportPath); err != nil {
+		return fmt.Errorf("failed to install verified database/report pair: %w", err)
+	}
+
+	logger.Info("Processing complete",
+		zap.String("database", outputDB),
+		zap.String("source_report", reportPath),
+	)
 
 	// 输出统计信息
 	if err := printStatistics(outputDB); err != nil {
@@ -81,8 +140,374 @@ func run(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+type renameFunc func(string, string) error
+
+func outputRecoveryPaths(databasePath, reportPath string) (databaseBackup, reportBackup, marker string) {
+	return databasePath + ".lkg", reportPath + ".lkg", databasePath + ".installing"
+}
+
+// recoverOutputPair rolls back any interrupted two-file installation. Restoring
+// the previous pair is deliberately conservative even if both new files appear
+// present: without the removed commit marker they were never acknowledged as a
+// complete provenance pair.
+func recoverOutputPair(databasePath, reportPath string) error {
+	databaseBackup, reportBackup, marker := outputRecoveryPaths(databasePath, reportPath)
+	markerExists := fileExists(marker)
+	databaseBackupExists := fileExists(databaseBackup)
+	reportBackupExists := fileExists(reportBackup)
+	if !markerExists {
+		// Backups are created while the old pair is still live, before the commit
+		// marker. A crash in that preparation window can therefore leave only
+		// harmless stale copies; remove them only when the live pair is complete.
+		if databaseBackupExists || reportBackupExists {
+			if !fileExists(databasePath) || !fileExists(reportPath) {
+				return fmt.Errorf("stale output backups exist without a complete live pair")
+			}
+			_ = os.Remove(databaseBackup)
+			_ = os.Remove(reportBackup)
+		}
+		return nil
+	}
+	if _, err := os.Stat(marker); err != nil {
+		return err
+	}
+
+	if databaseBackupExists != reportBackupExists {
+		// Older builds removed the marker and both backups without an fsync
+		// boundary between those phases. A crash could therefore leave a durable
+		// marker plus only one backup even though both newly installed live files
+		// were already synced. Preserve that complete live pair and finish the
+		// interrupted commit cleanup instead of making recovery impossible.
+		if !fileExists(databasePath) || !fileExists(reportPath) {
+			return fmt.Errorf("incomplete last-known-good output backup")
+		}
+		if err := syncOutputDirectory(databasePath); err != nil {
+			return err
+		}
+		if err := os.Remove(marker); err != nil {
+			return err
+		}
+		if err := syncOutputDirectory(databasePath); err != nil {
+			return err
+		}
+		_ = os.Remove(databaseBackup)
+		_ = os.Remove(reportBackup)
+		return syncOutputDirectory(databasePath)
+	}
+	if databaseBackupExists {
+		if err := restoreRecoveryCopy(databaseBackup, databasePath, os.Rename); err != nil {
+			return err
+		}
+		if err := restoreRecoveryCopy(reportBackup, reportPath, os.Rename); err != nil {
+			return err
+		}
+		if !fileExists(databasePath) || !fileExists(reportPath) {
+			return fmt.Errorf("restored output pair failed final existence check")
+		}
+	} else {
+		if err := os.Remove(databasePath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Remove(reportPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := syncOutputDirectory(databasePath); err != nil {
+		return err
+	}
+	if err := os.Remove(marker); err != nil {
+		return err
+	}
+	if err := syncOutputDirectory(databasePath); err != nil {
+		return err
+	}
+	_ = os.Remove(databaseBackup)
+	_ = os.Remove(reportBackup)
+	return syncOutputDirectory(databasePath)
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func syncOutputDirectory(path string) error {
+	directory, err := os.Open(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = directory.Close() }()
+	return directory.Sync()
+}
+
+func createRecoveryCopy(source, destination string) error {
+	if err := os.Link(source, destination); err == nil {
+		return nil
+	}
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sourceFile.Close() }()
+	info, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+	destinationFile, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, info.Mode().Perm())
+	if err != nil {
+		return err
+	}
+	ok := false
+	defer func() {
+		_ = destinationFile.Close()
+		if !ok {
+			_ = os.Remove(destination)
+		}
+	}()
+	if _, err := io.Copy(destinationFile, sourceFile); err != nil {
+		return err
+	}
+	if err := destinationFile.Sync(); err != nil {
+		return err
+	}
+	if err := destinationFile.Close(); err != nil {
+		return err
+	}
+	ok = true
+	return nil
+}
+
+// restoreRecoveryCopy installs a copy of a backup without consuming the
+// backup itself. If the final rename fails, both LKG files and the marker stay
+// available for the next process to recover instead of silently losing the
+// only complete previous pair.
+func restoreRecoveryCopy(source, destination string, rename renameFunc) error {
+	sourceFile, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = sourceFile.Close() }()
+	info, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(destination), "."+filepath.Base(destination)+".restore-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	installed := false
+	defer func() {
+		_ = temp.Close()
+		if !installed {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	if err := temp.Chmod(info.Mode().Perm()); err != nil {
+		return err
+	}
+	if _, err := io.Copy(temp, sourceFile); err != nil {
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	if err := rename(tempPath, destination); err != nil {
+		return err
+	}
+	installed = true
+	return nil
+}
+
+func installOutputPair(stagedDatabase, databasePath, stagedReport, reportPath string) error {
+	return installOutputPairWithRename(stagedDatabase, databasePath, stagedReport, reportPath, os.Rename)
+}
+
+// installOutputPairWithRename is intentionally one explicit state machine: its
+// branches correspond to durable preparation, installation, rollback, and
+// cleanup boundaries that must remain reviewable together.
+//
+//nolint:gocyclo // Splitting this atomic state machine would obscure its crash-order invariants.
+func installOutputPairWithRename(stagedDatabase, databasePath, stagedReport, reportPath string, rename renameFunc) error {
+	if !fileExists(stagedDatabase) || !fileExists(stagedReport) {
+		return fmt.Errorf("both staged database and source report must be regular files")
+	}
+	outputDir := filepath.Clean(filepath.Dir(databasePath))
+	for _, path := range []string{stagedDatabase, stagedReport, reportPath} {
+		if filepath.Clean(filepath.Dir(path)) != outputDir {
+			return fmt.Errorf("staged and live database/report files must share one directory")
+		}
+	}
+	databaseBackup, reportBackup, marker := outputRecoveryPaths(databasePath, reportPath)
+	if fileExists(marker) || fileExists(databaseBackup) || fileExists(reportBackup) {
+		return fmt.Errorf("stale output recovery state exists")
+	}
+	databaseExists, reportExists := fileExists(databasePath), fileExists(reportPath)
+	if databaseExists != reportExists {
+		return fmt.Errorf("existing database/report pair is incomplete")
+	}
+
+	// Preserve the old pair without moving it. Only after both recovery copies
+	// exist do we create the marker that authorizes destructive replacement.
+	if databaseExists {
+		if err := createRecoveryCopy(databasePath, databaseBackup); err != nil {
+			return err
+		}
+		if err := createRecoveryCopy(reportPath, reportBackup); err != nil {
+			_ = os.Remove(databaseBackup)
+			return err
+		}
+		if err := syncOutputDirectory(databasePath); err != nil {
+			_ = os.Remove(databaseBackup)
+			_ = os.Remove(reportBackup)
+			return err
+		}
+	}
+	markerFile, err := os.OpenFile(marker, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		_ = os.Remove(databaseBackup)
+		_ = os.Remove(reportBackup)
+		return err
+	}
+	if err := markerFile.Sync(); err != nil {
+		_ = markerFile.Close()
+		_ = os.Remove(marker)
+		_ = os.Remove(databaseBackup)
+		_ = os.Remove(reportBackup)
+		return err
+	}
+	if err := markerFile.Close(); err != nil {
+		_ = os.Remove(marker)
+		_ = os.Remove(databaseBackup)
+		_ = os.Remove(reportBackup)
+		return err
+	}
+	if err := syncOutputDirectory(databasePath); err != nil {
+		_ = os.Remove(marker)
+		_ = os.Remove(databaseBackup)
+		_ = os.Remove(reportBackup)
+		return err
+	}
+
+	rollback := func() error {
+		if err := os.Remove(databasePath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if err := os.Remove(reportPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if databaseExists {
+			if err := restoreRecoveryCopy(databaseBackup, databasePath, rename); err != nil {
+				return err
+			}
+			if err := restoreRecoveryCopy(reportBackup, reportPath, rename); err != nil {
+				return err
+			}
+		}
+		if err := syncOutputDirectory(databasePath); err != nil {
+			return err
+		}
+		// The complete old pair is now durable. Removing the marker acknowledges
+		// rollback; stale backup cleanup is harmless and recoverOutputPair can
+		// finish it if this process stops between the following phases.
+		if err := os.Remove(marker); err != nil {
+			return err
+		}
+		if err := syncOutputDirectory(databasePath); err != nil {
+			return err
+		}
+		_ = os.Remove(databaseBackup)
+		_ = os.Remove(reportBackup)
+		return syncOutputDirectory(databasePath)
+	}
+	if err := rename(stagedDatabase, databasePath); err != nil {
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return fmt.Errorf("%w (rollback failed and recovery state was retained: %v)", err, rollbackErr)
+		}
+		return err
+	}
+	if err := rename(stagedReport, reportPath); err != nil {
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return fmt.Errorf("%w (rollback failed and recovery state was retained: %v)", err, rollbackErr)
+		}
+		return err
+	}
+	if err := syncOutputDirectory(databasePath); err != nil {
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return fmt.Errorf("%w (rollback failed and recovery state was retained: %v)", err, rollbackErr)
+		}
+		return err
+	}
+	if !fileExists(databasePath) || !fileExists(reportPath) {
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return fmt.Errorf("installed output pair failed final existence check; rollback failed and recovery state was retained: %w", rollbackErr)
+		}
+		return fmt.Errorf("installed output pair failed final existence check")
+	}
+	if err := os.Remove(marker); err != nil {
+		if rollbackErr := rollback(); rollbackErr != nil {
+			return fmt.Errorf("%w (rollback failed and recovery state was retained: %v)", err, rollbackErr)
+		}
+		return err
+	}
+	if err := syncOutputDirectory(databasePath); err != nil {
+		return err
+	}
+	_ = os.Remove(databaseBackup)
+	_ = os.Remove(reportBackup)
+	return syncOutputDirectory(databasePath)
+}
+
+func stageJSONReport(destination string, report loader.LoadReport) (string, error) {
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	data = append(data, '\n')
+
+	file, err := os.CreateTemp(filepath.Dir(destination), "."+filepath.Base(destination)+".build-*")
+	if err != nil {
+		return "", err
+	}
+	path := file.Name()
+	ok := false
+	defer func() {
+		_ = file.Close()
+		if !ok {
+			_ = os.Remove(path)
+		}
+	}()
+	if err := file.Chmod(0o644); err != nil {
+		return "", err
+	}
+	if _, err := file.Write(data); err != nil {
+		return "", err
+	}
+	if err := file.Sync(); err != nil {
+		return "", err
+	}
+	if err := file.Close(); err != nil {
+		return "", err
+	}
+	ok = true
+	return path, nil
+}
+
 // processUnifiedDatabase 重建数据库，并依次导入简体与繁体两套数据。
-func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, workers int) error {
+func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, rejections []database.SourceRejection, workers int) error {
+	return processUnifiedDatabaseWithBatchSize(dbPath, poems, rejections, workers, 0)
+}
+
+func processUnifiedDatabaseWithBatchSize(
+	dbPath string,
+	poems []loader.PoemWithMeta,
+	rejections []database.SourceRejection,
+	workers int,
+	batchSize int,
+) error {
 	// 删除已存在的数据库文件
 	if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("failed to remove existing database: %w", err)
@@ -93,18 +518,27 @@ func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, workers 
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
-	defer func() { _ = db.Close() }()
+	databaseClosed := false
+	defer func() {
+		if !databaseClosed {
+			_ = db.Close()
+		}
+	}()
 
 	// 执行迁移，创建简繁两套表
 	logger.Info("Creating database schema (simplified + traditional tables)")
 	if err := db.Migrate(); err != nil {
 		return fmt.Errorf("failed to migrate database: %w", err)
 	}
+	if err := db.InsertSourceRejections(rejections); err != nil {
+		return fmt.Errorf("failed to persist source rejection ledger: %w", err)
+	}
 
 	// 处理简体版本
 	logger.Info("Processing language variant", zap.String("lang", "zh-Hans"))
 	repoSimp := database.NewRepositoryWithLang(db, database.LangHans)
 	procSimp := processor.NewProcessor(repoSimp, workers, false)
+	procSimp.SetBatchSize(batchSize)
 	if err := procSimp.Process(poems); err != nil {
 		return fmt.Errorf("failed to process simplified poems: %w", err)
 	}
@@ -113,27 +547,298 @@ func processUnifiedDatabase(dbPath string, poems []loader.PoemWithMeta, workers 
 	logger.Info("Processing language variant", zap.String("lang", "zh-Hant"))
 	repoTrad := database.NewRepositoryWithLang(db, database.LangHant)
 	procTrad := processor.NewProcessor(repoTrad, workers, true)
+	procTrad.SetBatchSize(batchSize)
 	if err := procTrad.Process(poems); err != nil {
 		return fmt.Errorf("failed to process traditional poems: %w", err)
 	}
 
-	// 优化数据库文件
-	logger.Info("Optimizing database")
-	if err := db.Exec("VACUUM").Error; err != nil {
-		logger.Warn("Failed to vacuum database", zap.Error(err))
+	var rejectionCount int64
+	if err := db.Table("source_rejections").Count(&rejectionCount).Error; err != nil {
+		return fmt.Errorf("failed to count source rejections: %w", err)
+	}
+	if rejectionCount != int64(len(rejections)) {
+		return fmt.Errorf("source rejection ledger has %d rows, expected %d", rejectionCount, len(rejections))
+	}
+	for _, lang := range []database.Lang{database.LangHans, database.LangHant} {
+		var sourceCount int64
+		if err := db.Table(database.PoemSourcesTable(lang)).Count(&sourceCount).Error; err != nil {
+			return fmt.Errorf("failed to count %s source witnesses: %w", lang, err)
+		}
+		if sourceCount != int64(len(poems)) {
+			return fmt.Errorf("%s source witness table has %d rows, expected %d", lang, sourceCount, len(poems))
+		}
 	}
 
+	// Generation time belongs in the external release manifest, not in logical
+	// corpus rows. Normalize audit-neutral timestamps so identical source and
+	// pipeline inputs can produce byte-identical SQLite assets in one toolchain.
+	const deterministicTimestamp = "1970-01-01T00:00:00Z"
+	timestampTables := []string{"source_rejections"}
+	for _, lang := range []database.Lang{database.LangHans, database.LangHant} {
+		timestampTables = append(timestampTables,
+			database.DynastiesTable(lang),
+			database.AuthorsTable(lang),
+			database.PoetryTypesTable(lang),
+			database.PoemsTable(lang),
+			database.PoemSourcesTable(lang),
+		)
+	}
+	for _, table := range timestampTables {
+		if err := db.Exec(fmt.Sprintf("UPDATE %s SET created_at = ?", table), deterministicTimestamp).Error; err != nil {
+			return fmt.Errorf("failed to normalize generated timestamps in %s: %w", table, err)
+		}
+	}
+	if err := db.Exec("UPDATE metadata SET updated_at = ?", deterministicTimestamp).Error; err != nil {
+		return fmt.Errorf("failed to normalize metadata timestamp: %w", err)
+	}
+
+	// 优化数据库文件
+	logger.Info("Optimizing database")
+	if err := rebuildDeterministicSearchIndexes(db); err != nil {
+		return fmt.Errorf("failed to rebuild deterministic search indexes: %w", err)
+	}
 	if err := db.Exec("ANALYZE").Error; err != nil {
-		logger.Warn("Failed to analyze database", zap.Error(err))
+		return fmt.Errorf("failed to analyze generated database: %w", err)
+	}
+	if err := normalizeSQLiteStatistics(db); err != nil {
+		return fmt.Errorf("failed to normalize generated database statistics: %w", err)
+	}
+	if err := normalizeSQLiteSchemaCookie(db); err != nil {
+		return fmt.Errorf("failed to normalize generated database schema cookie: %w", err)
+	}
+
+	// VACUUM INTO creates a fresh file instead of mutating the WAL-backed build
+	// database. Besides compacting the database, this resets SQLite header
+	// counters that otherwise depend on checkpoint history and worker/batch
+	// timing. Together with the canonical sqlite_stat1 order above, the fresh
+	// snapshot is byte-reproducible across the supported build environments.
+	snapshotPath, err := createCanonicalSQLiteSnapshot(db, dbPath)
+	if err != nil {
+		return fmt.Errorf("failed to create canonical database snapshot: %w", err)
+	}
+	snapshotInstalled := false
+	defer func() {
+		if !snapshotInstalled {
+			_ = os.Remove(snapshotPath)
+		}
+	}()
+
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("failed to close generated database before snapshot install: %w", err)
+	}
+	databaseClosed = true
+	for _, path := range []string{dbPath + "-wal", dbPath + "-shm"} {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove superseded generated database file %s: %w", path, err)
+		}
+	}
+	// On the supported POSIX release builders, renaming within one directory
+	// atomically replaces the disposable staged build database. If a platform
+	// cannot replace an existing destination, Rename fails while preserving the
+	// original staged database; do not create a remove-then-rename crash window.
+	if err := os.Rename(snapshotPath, dbPath); err != nil {
+		return fmt.Errorf("failed to install canonical database snapshot: %w", err)
+	}
+	snapshotInstalled = true
+	if err := syncOutputDirectory(dbPath); err != nil {
+		return fmt.Errorf("failed to sync canonical database snapshot: %w", err)
 	}
 
 	return nil
 }
 
+// normalizeSQLiteStatistics gives sqlite_stat1 a canonical rowid order.
+// Query planners treat these rows as an unordered set, but their physical
+// insertion order affects the bytes written by VACUUM. ANALYZE may emit the
+// same rows in a different order across SQLite builds and operating systems.
+func normalizeSQLiteStatistics(db *database.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		var statisticTables []string
+		if err := tx.Raw(
+			`SELECT name FROM sqlite_schema
+			 WHERE type = 'table' AND name GLOB 'sqlite_stat*'
+			 ORDER BY name COLLATE BINARY`,
+		).Scan(&statisticTables).Error; err != nil {
+			return fmt.Errorf("list SQLite statistics tables: %w", err)
+		}
+		if len(statisticTables) != 1 || statisticTables[0] != "sqlite_stat1" {
+			return fmt.Errorf("unsupported SQLite statistics tables: %v", statisticTables)
+		}
+
+		statements := []string{
+			`CREATE TEMP TABLE cpa_ordered_sqlite_stat1 (
+				tbl TEXT NOT NULL,
+				idx TEXT,
+				stat TEXT NOT NULL
+			)`,
+			`INSERT INTO cpa_ordered_sqlite_stat1 (tbl, idx, stat)
+			 SELECT tbl, idx, stat
+			 FROM sqlite_stat1
+			 ORDER BY tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY`,
+			`DELETE FROM sqlite_stat1`,
+			`INSERT INTO sqlite_stat1 (tbl, idx, stat)
+			 SELECT tbl, idx, stat
+			 FROM cpa_ordered_sqlite_stat1
+			 ORDER BY tbl COLLATE BINARY, idx COLLATE BINARY, stat COLLATE BINARY`,
+			`DROP TABLE cpa_ordered_sqlite_stat1`,
+		}
+		for index, statement := range statements {
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf("statistics normalization statement %d: %w", index+1, err)
+			}
+		}
+		return nil
+	})
+}
+
+func rebuildDeterministicSearchIndexes(db *database.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		for _, lang := range []database.Lang{database.LangHans, database.LangHant} {
+			table := database.PoemsFtsTable(lang)
+			// These are self-contained FTS5 tables. The special rebuild command
+			// recreates their segment trees in rowid order from the shadow content
+			// table, removing INSERT statement boundaries from the physical asset.
+			statement := fmt.Sprintf("INSERT INTO %[1]s(%[1]s) VALUES('rebuild')", table)
+			if err := tx.Exec(statement).Error; err != nil {
+				return fmt.Errorf("rebuild %s: %w", table, err)
+			}
+			integrityCheck := fmt.Sprintf("INSERT INTO %[1]s(%[1]s) VALUES('integrity-check')", table)
+			if err := tx.Exec(integrityCheck).Error; err != nil {
+				return fmt.Errorf("integrity-check %s: %w", table, err)
+			}
+			if err := verifySearchIndexMatchesProducts(tx, lang); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func verifySearchIndexMatchesProducts(tx *gorm.DB, lang database.Lang) error {
+	poemsTable := database.PoemsTable(lang)
+	ftsTable := database.PoemsFtsTable(lang)
+	query := fmt.Sprintf(`
+		SELECT count(*) FROM (
+			SELECT p.id
+			FROM %[1]s AS p
+			LEFT JOIN %[2]s AS f ON f.rowid = p.id
+			WHERE f.rowid IS NULL
+			   OR f.title IS NOT p.title
+			   OR f.content_text IS NOT (
+				 SELECT COALESCE(group_concat(value, ''), '')
+				 FROM json_each(p.content)
+			   )
+			UNION ALL
+			SELECT f.rowid
+			FROM %[2]s AS f
+			LEFT JOIN %[1]s AS p ON p.id = f.rowid
+			WHERE p.id IS NULL
+		)`, poemsTable, ftsTable)
+	var mismatches int64
+	if err := tx.Raw(query).Scan(&mismatches).Error; err != nil {
+		return fmt.Errorf("compare %s with %s: %w", ftsTable, poemsTable, err)
+	}
+	if mismatches != 0 {
+		return fmt.Errorf("%s differs from %s in %d rows", ftsTable, poemsTable, mismatches)
+	}
+	return nil
+}
+
+func normalizeSQLiteSchemaCookie(db *database.DB) error {
+	// SQLite increments the file-header schema cookie for DDL history. All DDL
+	// is complete and this builder owns a single connection, so normalize the
+	// cookie before creating the immutable release snapshot. This is distinct
+	// from the application's schema_version row in metadata.
+	if err := db.Exec("PRAGMA schema_version = 1").Error; err != nil {
+		return err
+	}
+	var schemaCookie int
+	if err := db.Raw("PRAGMA schema_version").Scan(&schemaCookie).Error; err != nil {
+		return err
+	}
+	if schemaCookie != 1 {
+		return fmt.Errorf("SQLite schema cookie is %d, expected 1", schemaCookie)
+	}
+	return nil
+}
+
+func createCanonicalSQLiteSnapshot(db *database.DB, dbPath string) (string, error) {
+	temporary, err := os.CreateTemp(
+		filepath.Dir(dbPath),
+		"."+filepath.Base(dbPath)+".vacuum-*",
+	)
+	if err != nil {
+		return "", err
+	}
+	snapshotPath := temporary.Name()
+	if err := temporary.Close(); err != nil {
+		_ = os.Remove(snapshotPath)
+		return "", err
+	}
+	if err := os.Remove(snapshotPath); err != nil {
+		return "", err
+	}
+	snapshotReady := false
+	defer func() {
+		if !snapshotReady {
+			_ = os.Remove(snapshotPath)
+		}
+	}()
+
+	if err := db.Exec("VACUUM INTO ?", snapshotPath).Error; err != nil {
+		return "", err
+	}
+	info, err := os.Stat(snapshotPath)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() || info.Size() == 0 {
+		return "", fmt.Errorf("VACUUM INTO did not produce a non-empty regular file")
+	}
+	snapshotFile, err := os.Open(snapshotPath)
+	if err != nil {
+		return "", err
+	}
+	if err := snapshotFile.Sync(); err != nil {
+		_ = snapshotFile.Close()
+		return "", err
+	}
+	if err := snapshotFile.Close(); err != nil {
+		return "", err
+	}
+
+	snapshot, err := database.OpenReadOnly(snapshotPath, 1, 1)
+	if err != nil {
+		return "", err
+	}
+	var journalMode string
+	queryErr := snapshot.Raw("PRAGMA journal_mode").Scan(&journalMode).Error
+	closeErr := snapshot.Close()
+	if queryErr != nil {
+		return "", queryErr
+	}
+	if closeErr != nil {
+		return "", closeErr
+	}
+	if journalMode != "delete" {
+		return "", fmt.Errorf("canonical snapshot journal mode is %q, expected delete", journalMode)
+	}
+	for _, suffix := range []string{"-wal", "-shm"} {
+		if _, err := os.Stat(snapshotPath + suffix); err == nil {
+			return "", fmt.Errorf("canonical snapshot unexpectedly created %s sidecar", suffix)
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+	}
+
+	snapshotReady = true
+	return snapshotPath, nil
+}
+
 // printStatistics 打印各语言变体下的数据量统计。
 func printStatistics(dbPath string) error {
 	// 统计为只读操作，单连接即可
-	db, err := database.Open(dbPath, 1, 1)
+	db, err := database.OpenReadOnly(dbPath, 1, 1)
 	if err != nil {
 		return err
 	}
@@ -147,10 +852,16 @@ func printStatistics(dbPath string) error {
 	for _, lang := range []database.Lang{database.LangHans, database.LangHant} {
 		var poemCount, authorCount, dynastyCount, typeCount int64
 
-		db.Table(database.PoemsTable(lang)).Count(&poemCount)
-		db.Table(database.AuthorsTable(lang)).Count(&authorCount)
-		db.Table(database.DynastiesTable(lang)).Count(&dynastyCount)
-		db.Table(database.PoetryTypesTable(lang)).Count(&typeCount)
+		for table, destination := range map[string]*int64{
+			database.PoemsTable(lang):       &poemCount,
+			database.AuthorsTable(lang):     &authorCount,
+			database.DynastiesTable(lang):   &dynastyCount,
+			database.PoetryTypesTable(lang): &typeCount,
+		} {
+			if err := db.Table(table).Count(destination).Error; err != nil {
+				return fmt.Errorf("failed to count %s: %w", table, err)
+			}
+		}
 
 		langName := "Simplified (zh-Hans)"
 		if lang == database.LangHant {

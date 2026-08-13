@@ -13,8 +13,8 @@ import (
 
 	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/introspection"
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/model"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/model"
 	gqlparser "github.com/vektah/gqlparser/v2"
 	"github.com/vektah/gqlparser/v2/ast"
 )
@@ -38,8 +38,7 @@ type ResolverRoot interface {
 	Statistics() StatisticsResolver
 }
 
-type DirectiveRoot struct {
-}
+type DirectiveRoot struct{}
 
 type ComplexityRoot struct {
 	Author struct {
@@ -1148,7 +1147,7 @@ func (ec *executionContext) field_Query_author_args(ctx context.Context, rawArgs
 	args["id"] = arg0
 	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1162,7 +1161,7 @@ func (ec *executionContext) field_Query_authors_args(ctx context.Context, rawArg
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1200,7 +1199,7 @@ func (ec *executionContext) field_Query_dynasties_args(ctx context.Context, rawA
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1214,7 +1213,7 @@ func (ec *executionContext) field_Query_poemTypes_args(ctx context.Context, rawA
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1236,7 +1235,7 @@ func (ec *executionContext) field_Query_poem_args(ctx context.Context, rawArgs m
 	args["id"] = arg0
 	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1250,7 +1249,7 @@ func (ec *executionContext) field_Query_poems_args(ctx context.Context, rawArgs 
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1304,7 +1303,7 @@ func (ec *executionContext) field_Query_randomPoem_args(ctx context.Context, raw
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1342,7 +1341,7 @@ func (ec *executionContext) field_Query_searchPoems_args(ctx context.Context, ra
 	args["query"] = arg0
 	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1350,7 +1349,7 @@ func (ec *executionContext) field_Query_searchPoems_args(ctx context.Context, ra
 	args["lang"] = arg1
 	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "searchType",
 		func(ctx context.Context, v any) (*model.SearchType, error) {
-			return ec.unmarshalOSearchType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐSearchType(ctx, v)
+			return ec.unmarshalOSearchType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐSearchType(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1380,7 +1379,7 @@ func (ec *executionContext) field_Query_statistics_args(ctx context.Context, raw
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "lang",
 		func(ctx context.Context, v any) (*database.Lang, error) {
-			return ec.unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
+			return ec.unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx, v)
 		})
 	if err != nil {
 		return nil, err
@@ -1472,6 +1471,7 @@ func (ec *executionContext) _Author_id(ctx context.Context, field graphql.Collec
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Author_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Author", field, false, false, errors.New("field of type ID does not have child fields"))
 }
@@ -1495,6 +1495,7 @@ func (ec *executionContext) _Author_name(ctx context.Context, field graphql.Coll
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Author_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Author", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -1512,12 +1513,13 @@ func (ec *executionContext) _Author_dynasty(ctx context.Context, field graphql.C
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
-			return ec.marshalODynasty2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, selections, v)
+			return ec.marshalODynasty2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Author_dynasty(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Author",
@@ -1545,12 +1547,13 @@ func (ec *executionContext) _Author_poems(ctx context.Context, field graphql.Col
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.PoemConnection) graphql.Marshaler {
-			return ec.marshalNPoemConnection2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx, selections, v)
+			return ec.marshalNPoemConnection2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Author_poems(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Author",
@@ -1594,6 +1597,7 @@ func (ec *executionContext) _Author_poemCount(ctx context.Context, field graphql
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Author_poemCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Author", field, true, true, errors.New("field of type Int does not have child fields"))
 }
@@ -1611,12 +1615,13 @@ func (ec *executionContext) _AuthorConnection_edges(ctx context.Context, field g
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []database.AuthorEdge) graphql.Marshaler {
-			return ec.marshalNAuthorEdge2ᚕgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdgeᚄ(ctx, selections, v)
+			return ec.marshalNAuthorEdge2ᚕgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdgeᚄ(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_AuthorConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AuthorConnection",
@@ -1643,12 +1648,13 @@ func (ec *executionContext) _AuthorConnection_pageInfo(ctx context.Context, fiel
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v database.PageInfo) graphql.Marshaler {
-			return ec.marshalNPageInfo2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPageInfo(ctx, selections, v)
+			return ec.marshalNPageInfo2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPageInfo(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_AuthorConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AuthorConnection",
@@ -1681,6 +1687,7 @@ func (ec *executionContext) _AuthorConnection_totalCount(ctx context.Context, fi
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_AuthorConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("AuthorConnection", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -1698,12 +1705,13 @@ func (ec *executionContext) _AuthorEdge_node(ctx context.Context, field graphql.
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Author) graphql.Marshaler {
-			return ec.marshalNAuthor2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx, selections, v)
+			return ec.marshalNAuthor2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_AuthorEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "AuthorEdge",
@@ -1736,6 +1744,7 @@ func (ec *executionContext) _AuthorEdge_cursor(ctx context.Context, field graphq
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_AuthorEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("AuthorEdge", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -1759,6 +1768,7 @@ func (ec *executionContext) _Dynasty_id(ctx context.Context, field graphql.Colle
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, false, false, errors.New("field of type ID does not have child fields"))
 }
@@ -1782,6 +1792,7 @@ func (ec *executionContext) _Dynasty_name(ctx context.Context, field graphql.Col
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -1805,6 +1816,7 @@ func (ec *executionContext) _Dynasty_nameEn(ctx context.Context, field graphql.C
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_nameEn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -1828,6 +1840,7 @@ func (ec *executionContext) _Dynasty_startYear(ctx context.Context, field graphq
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_startYear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -1851,6 +1864,7 @@ func (ec *executionContext) _Dynasty_endYear(ctx context.Context, field graphql.
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_endYear(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -1874,6 +1888,7 @@ func (ec *executionContext) _Dynasty_poemCount(ctx context.Context, field graphq
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_poemCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, true, true, errors.New("field of type Int does not have child fields"))
 }
@@ -1897,6 +1912,7 @@ func (ec *executionContext) _Dynasty_authorCount(ctx context.Context, field grap
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Dynasty_authorCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Dynasty", field, true, true, errors.New("field of type Int does not have child fields"))
 }
@@ -1914,12 +1930,13 @@ func (ec *executionContext) _DynastyStats_dynasty(ctx context.Context, field gra
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
-			return ec.marshalNDynasty2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, selections, v)
+			return ec.marshalNDynasty2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_DynastyStats_dynasty(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "DynastyStats",
@@ -1952,6 +1969,7 @@ func (ec *executionContext) _DynastyStats_count(ctx context.Context, field graph
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_DynastyStats_count(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("DynastyStats", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -1975,6 +1993,7 @@ func (ec *executionContext) _PageInfo_hasNextPage(ctx context.Context, field gra
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PageInfo_hasNextPage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PageInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -1998,6 +2017,7 @@ func (ec *executionContext) _PageInfo_hasPreviousPage(ctx context.Context, field
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PageInfo_hasPreviousPage(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PageInfo", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -2021,6 +2041,7 @@ func (ec *executionContext) _PageInfo_startCursor(ctx context.Context, field gra
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_PageInfo_startCursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PageInfo", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2044,6 +2065,7 @@ func (ec *executionContext) _PageInfo_endCursor(ctx context.Context, field graph
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_PageInfo_endCursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PageInfo", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2067,6 +2089,7 @@ func (ec *executionContext) _Poem_id(ctx context.Context, field graphql.Collecte
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Poem_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Poem", field, false, false, errors.New("field of type ID does not have child fields"))
 }
@@ -2090,6 +2113,7 @@ func (ec *executionContext) _Poem_title(ctx context.Context, field graphql.Colle
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Poem_title(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Poem", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2113,6 +2137,7 @@ func (ec *executionContext) _Poem_content(ctx context.Context, field graphql.Col
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Poem_content(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Poem", field, true, true, errors.New("field of type String does not have child fields"))
 }
@@ -2130,12 +2155,13 @@ func (ec *executionContext) _Poem_author(ctx context.Context, field graphql.Coll
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Author) graphql.Marshaler {
-			return ec.marshalOAuthor2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx, selections, v)
+			return ec.marshalOAuthor2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Poem_author(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Poem",
@@ -2162,12 +2188,13 @@ func (ec *executionContext) _Poem_dynasty(ctx context.Context, field graphql.Col
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
-			return ec.marshalODynasty2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, selections, v)
+			return ec.marshalODynasty2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Poem_dynasty(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Poem",
@@ -2194,12 +2221,13 @@ func (ec *executionContext) _Poem_type(ctx context.Context, field graphql.Collec
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.PoetryType) graphql.Marshaler {
-			return ec.marshalOPoetryType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx, selections, v)
+			return ec.marshalOPoetryType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Poem_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Poem",
@@ -2226,12 +2254,13 @@ func (ec *executionContext) _PoemConnection_edges(ctx context.Context, field gra
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []database.PoemEdge) graphql.Marshaler {
-			return ec.marshalNPoemEdge2ᚕgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdgeᚄ(ctx, selections, v)
+			return ec.marshalNPoemEdge2ᚕgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdgeᚄ(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoemConnection_edges(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "PoemConnection",
@@ -2258,12 +2287,13 @@ func (ec *executionContext) _PoemConnection_pageInfo(ctx context.Context, field 
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v database.PageInfo) graphql.Marshaler {
-			return ec.marshalNPageInfo2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPageInfo(ctx, selections, v)
+			return ec.marshalNPageInfo2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPageInfo(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoemConnection_pageInfo(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "PoemConnection",
@@ -2296,6 +2326,7 @@ func (ec *executionContext) _PoemConnection_totalCount(ctx context.Context, fiel
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoemConnection_totalCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoemConnection", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -2313,12 +2344,13 @@ func (ec *executionContext) _PoemEdge_node(ctx context.Context, field graphql.Co
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v database.Poem) graphql.Marshaler {
-			return ec.marshalNPoem2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx, selections, v)
+			return ec.marshalNPoem2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoemEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "PoemEdge",
@@ -2351,6 +2383,7 @@ func (ec *executionContext) _PoemEdge_cursor(ctx context.Context, field graphql.
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoemEdge_cursor(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoemEdge", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2374,6 +2407,7 @@ func (ec *executionContext) _PoetryType_id(ctx context.Context, field graphql.Co
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, false, false, errors.New("field of type ID does not have child fields"))
 }
@@ -2397,6 +2431,7 @@ func (ec *executionContext) _PoetryType_name(ctx context.Context, field graphql.
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2420,6 +2455,7 @@ func (ec *executionContext) _PoetryType_category(ctx context.Context, field grap
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_category(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2443,6 +2479,7 @@ func (ec *executionContext) _PoetryType_lines(ctx context.Context, field graphql
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_lines(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -2466,6 +2503,7 @@ func (ec *executionContext) _PoetryType_charsPerLine(ctx context.Context, field 
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_charsPerLine(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -2489,6 +2527,7 @@ func (ec *executionContext) _PoetryType_description(ctx context.Context, field g
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -2512,6 +2551,7 @@ func (ec *executionContext) _PoetryType_poemCount(ctx context.Context, field gra
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_PoetryType_poemCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PoetryType", field, true, true, errors.New("field of type Int does not have child fields"))
 }
@@ -2530,12 +2570,13 @@ func (ec *executionContext) _Query_poem(ctx context.Context, field graphql.Colle
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Poem) graphql.Marshaler {
-			return ec.marshalOPoem2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx, selections, v)
+			return ec.marshalOPoem2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_poem(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2574,12 +2615,13 @@ func (ec *executionContext) _Query_poems(ctx context.Context, field graphql.Coll
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.PoemConnection) graphql.Marshaler {
-			return ec.marshalNPoemConnection2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx, selections, v)
+			return ec.marshalNPoemConnection2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_poems(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2618,12 +2660,13 @@ func (ec *executionContext) _Query_searchPoems(ctx context.Context, field graphq
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.PoemConnection) graphql.Marshaler {
-			return ec.marshalNPoemConnection2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx, selections, v)
+			return ec.marshalNPoemConnection2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_searchPoems(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2662,12 +2705,13 @@ func (ec *executionContext) _Query_randomPoem(ctx context.Context, field graphql
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Poem) graphql.Marshaler {
-			return ec.marshalOPoem2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx, selections, v)
+			return ec.marshalOPoem2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_randomPoem(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2706,12 +2750,13 @@ func (ec *executionContext) _Query_author(ctx context.Context, field graphql.Col
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Author) graphql.Marshaler {
-			return ec.marshalOAuthor2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx, selections, v)
+			return ec.marshalOAuthor2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx, selections, v)
 		},
 		true,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_author(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2750,12 +2795,13 @@ func (ec *executionContext) _Query_authors(ctx context.Context, field graphql.Co
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.AuthorConnection) graphql.Marshaler {
-			return ec.marshalNAuthorConnection2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorConnection(ctx, selections, v)
+			return ec.marshalNAuthorConnection2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorConnection(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_authors(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2794,12 +2840,13 @@ func (ec *executionContext) _Query_dynasties(ctx context.Context, field graphql.
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []*database.Dynasty) graphql.Marshaler {
-			return ec.marshalNDynasty2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynastyᚄ(ctx, selections, v)
+			return ec.marshalNDynasty2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynastyᚄ(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_dynasties(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2838,12 +2885,13 @@ func (ec *executionContext) _Query_poemTypes(ctx context.Context, field graphql.
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []*database.PoetryType) graphql.Marshaler {
-			return ec.marshalNPoetryType2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryTypeᚄ(ctx, selections, v)
+			return ec.marshalNPoetryType2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryTypeᚄ(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_poemTypes(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2882,12 +2930,13 @@ func (ec *executionContext) _Query_statistics(ctx context.Context, field graphql
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.Statistics) graphql.Marshaler {
-			return ec.marshalNStatistics2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐStatistics(ctx, selections, v)
+			return ec.marshalNStatistics2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐStatistics(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query_statistics(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2932,6 +2981,7 @@ func (ec *executionContext) _Query___type(ctx context.Context, field graphql.Col
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query___type(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -2975,6 +3025,7 @@ func (ec *executionContext) _Query___schema(ctx context.Context, field graphql.C
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Query",
@@ -3007,6 +3058,7 @@ func (ec *executionContext) _Statistics_totalPoems(ctx context.Context, field gr
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Statistics_totalPoems(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Statistics", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -3030,6 +3082,7 @@ func (ec *executionContext) _Statistics_totalAuthors(ctx context.Context, field 
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Statistics_totalAuthors(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Statistics", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -3053,6 +3106,7 @@ func (ec *executionContext) _Statistics_totalDynasties(ctx context.Context, fiel
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Statistics_totalDynasties(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("Statistics", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -3070,12 +3124,13 @@ func (ec *executionContext) _Statistics_poemsByDynasty(ctx context.Context, fiel
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []*model.DynastyStats) graphql.Marshaler {
-			return ec.marshalNDynastyStats2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStatsᚄ(ctx, selections, v)
+			return ec.marshalNDynastyStats2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStatsᚄ(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Statistics_poemsByDynasty(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Statistics",
@@ -3102,12 +3157,13 @@ func (ec *executionContext) _Statistics_poemsByType(ctx context.Context, field g
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []*model.TypeStats) graphql.Marshaler {
-			return ec.marshalNTypeStats2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStatsᚄ(ctx, selections, v)
+			return ec.marshalNTypeStats2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStatsᚄ(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_Statistics_poemsByType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Statistics",
@@ -3134,12 +3190,13 @@ func (ec *executionContext) _TypeStats_type(ctx context.Context, field graphql.C
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *database.PoetryType) graphql.Marshaler {
-			return ec.marshalNPoetryType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx, selections, v)
+			return ec.marshalNPoetryType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_TypeStats_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "TypeStats",
@@ -3172,6 +3229,7 @@ func (ec *executionContext) _TypeStats_count(ctx context.Context, field graphql.
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext_TypeStats_count(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("TypeStats", field, false, false, errors.New("field of type Int does not have child fields"))
 }
@@ -3195,6 +3253,7 @@ func (ec *executionContext) ___Directive_name(ctx context.Context, field graphql
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Directive_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Directive", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -3218,6 +3277,7 @@ func (ec *executionContext) ___Directive_description(ctx context.Context, field 
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Directive_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Directive", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3241,6 +3301,7 @@ func (ec *executionContext) ___Directive_isRepeatable(ctx context.Context, field
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Directive_isRepeatable(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Directive", field, false, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -3264,6 +3325,7 @@ func (ec *executionContext) ___Directive_locations(ctx context.Context, field gr
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Directive_locations(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Directive", field, false, false, errors.New("field of type __DirectiveLocation does not have child fields"))
 }
@@ -3287,6 +3349,7 @@ func (ec *executionContext) ___Directive_args(ctx context.Context, field graphql
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Directive_args(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Directive",
@@ -3330,6 +3393,7 @@ func (ec *executionContext) ___EnumValue_name(ctx context.Context, field graphql
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___EnumValue_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__EnumValue", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -3353,6 +3417,7 @@ func (ec *executionContext) ___EnumValue_description(ctx context.Context, field 
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___EnumValue_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__EnumValue", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3376,6 +3441,7 @@ func (ec *executionContext) ___EnumValue_isDeprecated(ctx context.Context, field
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___EnumValue_isDeprecated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__EnumValue", field, true, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -3399,6 +3465,7 @@ func (ec *executionContext) ___EnumValue_deprecationReason(ctx context.Context, 
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___EnumValue_deprecationReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__EnumValue", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3422,6 +3489,7 @@ func (ec *executionContext) ___Field_name(ctx context.Context, field graphql.Col
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Field_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Field", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -3445,6 +3513,7 @@ func (ec *executionContext) ___Field_description(ctx context.Context, field grap
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Field_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Field", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3468,6 +3537,7 @@ func (ec *executionContext) ___Field_args(ctx context.Context, field graphql.Col
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Field_args(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Field",
@@ -3511,6 +3581,7 @@ func (ec *executionContext) ___Field_type(ctx context.Context, field graphql.Col
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Field_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Field",
@@ -3543,6 +3614,7 @@ func (ec *executionContext) ___Field_isDeprecated(ctx context.Context, field gra
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Field_isDeprecated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Field", field, true, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -3566,6 +3638,7 @@ func (ec *executionContext) ___Field_deprecationReason(ctx context.Context, fiel
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Field_deprecationReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Field", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3589,6 +3662,7 @@ func (ec *executionContext) ___InputValue_name(ctx context.Context, field graphq
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___InputValue_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__InputValue", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -3612,6 +3686,7 @@ func (ec *executionContext) ___InputValue_description(ctx context.Context, field
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___InputValue_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__InputValue", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3635,6 +3710,7 @@ func (ec *executionContext) ___InputValue_type(ctx context.Context, field graphq
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___InputValue_type(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__InputValue",
@@ -3667,6 +3743,7 @@ func (ec *executionContext) ___InputValue_defaultValue(ctx context.Context, fiel
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___InputValue_defaultValue(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__InputValue", field, false, false, errors.New("field of type String does not have child fields"))
 }
@@ -3690,6 +3767,7 @@ func (ec *executionContext) ___InputValue_isDeprecated(ctx context.Context, fiel
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___InputValue_isDeprecated(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__InputValue", field, true, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -3713,6 +3791,7 @@ func (ec *executionContext) ___InputValue_deprecationReason(ctx context.Context,
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___InputValue_deprecationReason(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__InputValue", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3736,6 +3815,7 @@ func (ec *executionContext) ___Schema_description(ctx context.Context, field gra
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Schema_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Schema", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3759,6 +3839,7 @@ func (ec *executionContext) ___Schema_types(ctx context.Context, field graphql.C
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Schema_types(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Schema",
@@ -3791,6 +3872,7 @@ func (ec *executionContext) ___Schema_queryType(ctx context.Context, field graph
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Schema_queryType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Schema",
@@ -3823,6 +3905,7 @@ func (ec *executionContext) ___Schema_mutationType(ctx context.Context, field gr
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Schema_mutationType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Schema",
@@ -3855,6 +3938,7 @@ func (ec *executionContext) ___Schema_subscriptionType(ctx context.Context, fiel
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Schema_subscriptionType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Schema",
@@ -3887,6 +3971,7 @@ func (ec *executionContext) ___Schema_directives(ctx context.Context, field grap
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Schema_directives(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Schema",
@@ -3919,6 +4004,7 @@ func (ec *executionContext) ___Type_kind(ctx context.Context, field graphql.Coll
 		true,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_kind(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Type", field, true, false, errors.New("field of type __TypeKind does not have child fields"))
 }
@@ -3942,6 +4028,7 @@ func (ec *executionContext) ___Type_name(ctx context.Context, field graphql.Coll
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_name(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Type", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3965,6 +4052,7 @@ func (ec *executionContext) ___Type_description(ctx context.Context, field graph
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_description(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Type", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -3988,6 +4076,7 @@ func (ec *executionContext) ___Type_specifiedByURL(ctx context.Context, field gr
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_specifiedByURL(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Type", field, true, false, errors.New("field of type String does not have child fields"))
 }
@@ -4012,6 +4101,7 @@ func (ec *executionContext) ___Type_fields(ctx context.Context, field graphql.Co
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_fields(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Type",
@@ -4055,6 +4145,7 @@ func (ec *executionContext) ___Type_interfaces(ctx context.Context, field graphq
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_interfaces(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Type",
@@ -4087,6 +4178,7 @@ func (ec *executionContext) ___Type_possibleTypes(ctx context.Context, field gra
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_possibleTypes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Type",
@@ -4120,6 +4212,7 @@ func (ec *executionContext) ___Type_enumValues(ctx context.Context, field graphq
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_enumValues(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Type",
@@ -4163,6 +4256,7 @@ func (ec *executionContext) ___Type_inputFields(ctx context.Context, field graph
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_inputFields(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Type",
@@ -4195,6 +4289,7 @@ func (ec *executionContext) ___Type_ofType(ctx context.Context, field graphql.Co
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_ofType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "__Type",
@@ -4227,6 +4322,7 @@ func (ec *executionContext) ___Type_isOneOf(ctx context.Context, field graphql.C
 		false,
 	)
 }
+
 func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("__Type", field, true, false, errors.New("field of type Boolean does not have child fields"))
 }
@@ -5708,11 +5804,11 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
-func (ec *executionContext) marshalNAuthor2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx context.Context, sel ast.SelectionSet, v database.Author) graphql.Marshaler {
+func (ec *executionContext) marshalNAuthor2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx context.Context, sel ast.SelectionSet, v database.Author) graphql.Marshaler {
 	return ec._Author(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNAuthor2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx context.Context, sel ast.SelectionSet, v *database.Author) graphql.Marshaler {
+func (ec *executionContext) marshalNAuthor2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx context.Context, sel ast.SelectionSet, v *database.Author) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -5722,11 +5818,11 @@ func (ec *executionContext) marshalNAuthor2ᚖgithubᚗcomᚋpalemokyᚋchinese�
 	return ec._Author(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNAuthorConnection2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorConnection(ctx context.Context, sel ast.SelectionSet, v database.AuthorConnection) graphql.Marshaler {
+func (ec *executionContext) marshalNAuthorConnection2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorConnection(ctx context.Context, sel ast.SelectionSet, v database.AuthorConnection) graphql.Marshaler {
 	return ec._AuthorConnection(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNAuthorConnection2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorConnection(ctx context.Context, sel ast.SelectionSet, v *database.AuthorConnection) graphql.Marshaler {
+func (ec *executionContext) marshalNAuthorConnection2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorConnection(ctx context.Context, sel ast.SelectionSet, v *database.AuthorConnection) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -5736,15 +5832,15 @@ func (ec *executionContext) marshalNAuthorConnection2ᚖgithubᚗcomᚋpalemoky�
 	return ec._AuthorConnection(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNAuthorEdge2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdge(ctx context.Context, sel ast.SelectionSet, v database.AuthorEdge) graphql.Marshaler {
+func (ec *executionContext) marshalNAuthorEdge2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdge(ctx context.Context, sel ast.SelectionSet, v database.AuthorEdge) graphql.Marshaler {
 	return ec._AuthorEdge(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNAuthorEdge2ᚕgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []database.AuthorEdge) graphql.Marshaler {
+func (ec *executionContext) marshalNAuthorEdge2ᚕgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []database.AuthorEdge) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
-		return ec.marshalNAuthorEdge2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdge(ctx, sel, v[i])
+		return ec.marshalNAuthorEdge2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthorEdge(ctx, sel, v[i])
 	})
 
 	for _, e := range ret {
@@ -5772,11 +5868,11 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 	return res
 }
 
-func (ec *executionContext) marshalNDynasty2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynastyᚄ(ctx context.Context, sel ast.SelectionSet, v []*database.Dynasty) graphql.Marshaler {
+func (ec *executionContext) marshalNDynasty2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynastyᚄ(ctx context.Context, sel ast.SelectionSet, v []*database.Dynasty) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
-		return ec.marshalNDynasty2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, sel, v[i])
+		return ec.marshalNDynasty2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx, sel, v[i])
 	})
 
 	for _, e := range ret {
@@ -5788,7 +5884,7 @@ func (ec *executionContext) marshalNDynasty2ᚕᚖgithubᚗcomᚋpalemokyᚋchin
 	return ret
 }
 
-func (ec *executionContext) marshalNDynasty2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx context.Context, sel ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
+func (ec *executionContext) marshalNDynasty2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx context.Context, sel ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -5798,11 +5894,11 @@ func (ec *executionContext) marshalNDynasty2ᚖgithubᚗcomᚋpalemokyᚋchinese
 	return ec._Dynasty(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNDynastyStats2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStatsᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.DynastyStats) graphql.Marshaler {
+func (ec *executionContext) marshalNDynastyStats2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStatsᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.DynastyStats) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
-		return ec.marshalNDynastyStats2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStats(ctx, sel, v[i])
+		return ec.marshalNDynastyStats2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStats(ctx, sel, v[i])
 	})
 
 	for _, e := range ret {
@@ -5814,7 +5910,7 @@ func (ec *executionContext) marshalNDynastyStats2ᚕᚖgithubᚗcomᚋpalemoky�
 	return ret
 }
 
-func (ec *executionContext) marshalNDynastyStats2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStats(ctx context.Context, sel ast.SelectionSet, v *model.DynastyStats) graphql.Marshaler {
+func (ec *executionContext) marshalNDynastyStats2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐDynastyStats(ctx context.Context, sel ast.SelectionSet, v *model.DynastyStats) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -5872,19 +5968,19 @@ func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.Selecti
 	return res
 }
 
-func (ec *executionContext) marshalNPageInfo2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPageInfo(ctx context.Context, sel ast.SelectionSet, v database.PageInfo) graphql.Marshaler {
+func (ec *executionContext) marshalNPageInfo2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPageInfo(ctx context.Context, sel ast.SelectionSet, v database.PageInfo) graphql.Marshaler {
 	return ec._PageInfo(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNPoem2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx context.Context, sel ast.SelectionSet, v database.Poem) graphql.Marshaler {
+func (ec *executionContext) marshalNPoem2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx context.Context, sel ast.SelectionSet, v database.Poem) graphql.Marshaler {
 	return ec._Poem(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNPoemConnection2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx context.Context, sel ast.SelectionSet, v database.PoemConnection) graphql.Marshaler {
+func (ec *executionContext) marshalNPoemConnection2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx context.Context, sel ast.SelectionSet, v database.PoemConnection) graphql.Marshaler {
 	return ec._PoemConnection(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNPoemConnection2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx context.Context, sel ast.SelectionSet, v *database.PoemConnection) graphql.Marshaler {
+func (ec *executionContext) marshalNPoemConnection2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemConnection(ctx context.Context, sel ast.SelectionSet, v *database.PoemConnection) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -5894,15 +5990,15 @@ func (ec *executionContext) marshalNPoemConnection2ᚖgithubᚗcomᚋpalemokyᚋ
 	return ec._PoemConnection(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNPoemEdge2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdge(ctx context.Context, sel ast.SelectionSet, v database.PoemEdge) graphql.Marshaler {
+func (ec *executionContext) marshalNPoemEdge2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdge(ctx context.Context, sel ast.SelectionSet, v database.PoemEdge) graphql.Marshaler {
 	return ec._PoemEdge(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNPoemEdge2ᚕgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []database.PoemEdge) graphql.Marshaler {
+func (ec *executionContext) marshalNPoemEdge2ᚕgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdgeᚄ(ctx context.Context, sel ast.SelectionSet, v []database.PoemEdge) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
-		return ec.marshalNPoemEdge2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdge(ctx, sel, v[i])
+		return ec.marshalNPoemEdge2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoemEdge(ctx, sel, v[i])
 	})
 
 	for _, e := range ret {
@@ -5914,11 +6010,11 @@ func (ec *executionContext) marshalNPoemEdge2ᚕgithubᚗcomᚋpalemokyᚋchines
 	return ret
 }
 
-func (ec *executionContext) marshalNPoetryType2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryTypeᚄ(ctx context.Context, sel ast.SelectionSet, v []*database.PoetryType) graphql.Marshaler {
+func (ec *executionContext) marshalNPoetryType2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryTypeᚄ(ctx context.Context, sel ast.SelectionSet, v []*database.PoetryType) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
-		return ec.marshalNPoetryType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx, sel, v[i])
+		return ec.marshalNPoetryType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx, sel, v[i])
 	})
 
 	for _, e := range ret {
@@ -5930,7 +6026,7 @@ func (ec *executionContext) marshalNPoetryType2ᚕᚖgithubᚗcomᚋpalemokyᚋc
 	return ret
 }
 
-func (ec *executionContext) marshalNPoetryType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx context.Context, sel ast.SelectionSet, v *database.PoetryType) graphql.Marshaler {
+func (ec *executionContext) marshalNPoetryType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx context.Context, sel ast.SelectionSet, v *database.PoetryType) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -5940,11 +6036,11 @@ func (ec *executionContext) marshalNPoetryType2ᚖgithubᚗcomᚋpalemokyᚋchin
 	return ec._PoetryType(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalNStatistics2githubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐStatistics(ctx context.Context, sel ast.SelectionSet, v database.Statistics) graphql.Marshaler {
+func (ec *executionContext) marshalNStatistics2githubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐStatistics(ctx context.Context, sel ast.SelectionSet, v database.Statistics) graphql.Marshaler {
 	return ec._Statistics(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNStatistics2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐStatistics(ctx context.Context, sel ast.SelectionSet, v *database.Statistics) graphql.Marshaler {
+func (ec *executionContext) marshalNStatistics2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐStatistics(ctx context.Context, sel ast.SelectionSet, v *database.Statistics) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -6000,11 +6096,11 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 	return ret
 }
 
-func (ec *executionContext) marshalNTypeStats2ᚕᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStatsᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.TypeStats) graphql.Marshaler {
+func (ec *executionContext) marshalNTypeStats2ᚕᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStatsᚄ(ctx context.Context, sel ast.SelectionSet, v []*model.TypeStats) graphql.Marshaler {
 	ret := graphql.MarshalSliceConcurrently(ctx, len(v), 0, false, func(ctx context.Context, i int) graphql.Marshaler {
 		fc := graphql.GetFieldContext(ctx)
 		fc.Result = &v[i]
-		return ec.marshalNTypeStats2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStats(ctx, sel, v[i])
+		return ec.marshalNTypeStats2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStats(ctx, sel, v[i])
 	})
 
 	for _, e := range ret {
@@ -6016,7 +6112,7 @@ func (ec *executionContext) marshalNTypeStats2ᚕᚖgithubᚗcomᚋpalemokyᚋch
 	return ret
 }
 
-func (ec *executionContext) marshalNTypeStats2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStats(ctx context.Context, sel ast.SelectionSet, v *model.TypeStats) graphql.Marshaler {
+func (ec *executionContext) marshalNTypeStats2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐTypeStats(ctx context.Context, sel ast.SelectionSet, v *model.TypeStats) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -6167,7 +6263,7 @@ func (ec *executionContext) marshalN__TypeKind2string(ctx context.Context, sel a
 	return res
 }
 
-func (ec *executionContext) marshalOAuthor2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx context.Context, sel ast.SelectionSet, v *database.Author) graphql.Marshaler {
+func (ec *executionContext) marshalOAuthor2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐAuthor(ctx context.Context, sel ast.SelectionSet, v *database.Author) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
@@ -6204,7 +6300,7 @@ func (ec *executionContext) marshalOBoolean2ᚖbool(ctx context.Context, sel ast
 	return res
 }
 
-func (ec *executionContext) marshalODynasty2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx context.Context, sel ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
+func (ec *executionContext) marshalODynasty2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐDynasty(ctx context.Context, sel ast.SelectionSet, v *database.Dynasty) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
@@ -6247,46 +6343,46 @@ func (ec *executionContext) marshalOInt2ᚖint(ctx context.Context, sel ast.Sele
 	return res
 }
 
-func (ec *executionContext) unmarshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx context.Context, v any) (*database.Lang, error) {
+func (ec *executionContext) unmarshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx context.Context, v any) (*database.Lang, error) {
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(database.Lang)
+	res := new(database.Lang)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) marshalOLang2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx context.Context, sel ast.SelectionSet, v *database.Lang) graphql.Marshaler {
+func (ec *executionContext) marshalOLang2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐLang(ctx context.Context, sel ast.SelectionSet, v *database.Lang) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return v
 }
 
-func (ec *executionContext) marshalOPoem2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx context.Context, sel ast.SelectionSet, v *database.Poem) graphql.Marshaler {
+func (ec *executionContext) marshalOPoem2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoem(ctx context.Context, sel ast.SelectionSet, v *database.Poem) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._Poem(ctx, sel, v)
 }
 
-func (ec *executionContext) marshalOPoetryType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx context.Context, sel ast.SelectionSet, v *database.PoetryType) graphql.Marshaler {
+func (ec *executionContext) marshalOPoetryType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋdatabaseᚐPoetryType(ctx context.Context, sel ast.SelectionSet, v *database.PoetryType) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
 	return ec._PoetryType(ctx, sel, v)
 }
 
-func (ec *executionContext) unmarshalOSearchType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐSearchType(ctx context.Context, v any) (*model.SearchType, error) {
+func (ec *executionContext) unmarshalOSearchType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐSearchType(ctx context.Context, v any) (*model.SearchType, error) {
 	if v == nil {
 		return nil, nil
 	}
-	var res = new(model.SearchType)
+	res := new(model.SearchType)
 	err := res.UnmarshalGQL(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
-func (ec *executionContext) marshalOSearchType2ᚖgithubᚗcomᚋpalemokyᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐSearchType(ctx context.Context, sel ast.SelectionSet, v *model.SearchType) graphql.Marshaler {
+func (ec *executionContext) marshalOSearchType2ᚖgithubᚗcomᚋericismyeldestsonᚋchineseᚑpoetryᚑapiᚋinternalᚋgraphᚋmodelᚐSearchType(ctx context.Context, sel ast.SelectionSet, v *model.SearchType) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}

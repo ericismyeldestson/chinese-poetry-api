@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -14,7 +16,7 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // setupPoemTestRouter 创建带数据库的测试路由。
@@ -248,6 +250,9 @@ func TestSearchPoems(t *testing.T) {
 
 	// 写入测试诗词
 	createTestPoem(t, repo, 1, "静夜思", "test content")
+	createTestPoem(t, repo, 2, "价格100%", "百分号正文")
+	createTestPoem(t, repo, 3, "下划_线", "下划线正文")
+	createTestPoem(t, repo, 4, `反斜\杠`, "反斜杠正文")
 
 	router.GET("/poems/search", handler.SearchPoems)
 
@@ -280,6 +285,14 @@ func TestSearchPoems(t *testing.T) {
 			},
 		},
 		{
+			name:           "short indexed query is rejected",
+			query:          "?q=李白",
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "use type=author")
+			},
+		},
+		{
 			name:           "search with pagination",
 			query:          "?q=test&page=1&page_size=10",
 			expectedStatus: http.StatusOK,
@@ -290,11 +303,59 @@ func TestSearchPoems(t *testing.T) {
 			},
 		},
 		{
+			name:           "percent wildcard slow path is rejected",
+			query:          "?q=100%25&type=title",
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "wildcard")
+			},
+		},
+		{
+			name:           "underscore wildcard slow path is rejected",
+			query:          "?q=" + url.QueryEscape("划_线") + "&type=title",
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "wildcard")
+			},
+		},
+		{
+			name:           "backslash wildcard slow path is rejected",
+			query:          "?q=" + url.QueryEscape(`斜\杠`) + "&type=title",
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "wildcard")
+			},
+		},
+		{
 			name:           "search without query parameter",
 			query:          "",
 			expectedStatus: http.StatusBadRequest,
 			checkResponse: func(t *testing.T, resp map[string]any) {
 				assert.Equal(t, "query parameter 'q' is required", resp["error"])
+			},
+		},
+		{
+			name:           "whitespace-only query is rejected",
+			query:          "?q=%20%09%E3%80%80",
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Equal(t, "query parameter 'q' is required", resp["error"])
+			},
+		},
+		{
+			name:           "query above Unicode length cap is rejected",
+			query:          "?q=" + url.QueryEscape(strings.Repeat("诗", 101)),
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "at most 100 characters")
+			},
+		},
+		{
+			name:           "deep page is rejected",
+			query:          "?q=test&page=1001",
+			expectedStatus: http.StatusBadRequest,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "page")
 			},
 		},
 		{
@@ -402,6 +463,15 @@ func TestRandomPoem(t *testing.T) {
 			expectedStatus: http.StatusNotFound,
 			checkResponse: func(t *testing.T, resp map[string]any) {
 				assert.Equal(t, "author not found", resp["error"])
+			},
+		},
+		{
+			name:           "single-character random search is gone",
+			query:          "?char=春",
+			setupData:      true,
+			expectedStatus: http.StatusGone,
+			checkResponse: func(t *testing.T, resp map[string]any) {
+				assert.Contains(t, resp["error"], "cannot use the search index")
 			},
 		},
 	}

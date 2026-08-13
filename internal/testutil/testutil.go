@@ -10,7 +10,7 @@ import (
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // SetupTestDB 创建一个已完成迁移的内存 SQLite 数据库，

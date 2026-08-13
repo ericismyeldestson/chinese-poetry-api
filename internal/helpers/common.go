@@ -3,7 +3,7 @@ package helpers
 import (
 	"strconv"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // ParseOptionalInt64 把字符串指针解析为 *int64，为 nil 或空串时返回 nil。

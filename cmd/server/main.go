@@ -1,32 +1,92 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/handler/extension"
+	"github.com/99designs/gqlgen/graphql/handler/lru"
+	"github.com/99designs/gqlgen/graphql/handler/transport"
 	"github.com/99designs/gqlgen/graphql/playground"
 	"github.com/gin-gonic/gin"
+	"github.com/vektah/gqlparser/v2/ast"
 	"go.uber.org/zap"
 
-	"github.com/palemoky/chinese-poetry-api/internal/api/rest"
-	"github.com/palemoky/chinese-poetry-api/internal/config"
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/graph"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/generated"
-	"github.com/palemoky/chinese-poetry-api/internal/logger"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/api/rest"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/config"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/generated"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/logger"
 )
 
+func newGraphQLServer(resolver *graph.Resolver, cfg config.GraphQLConfig) *handler.Server {
+	schema := generated.NewExecutableSchema(generated.Config{
+		Resolvers:  resolver,
+		Complexity: graph.ComplexityRoot(),
+	})
+	h := handler.New(schema)
+	h.AddTransport(transport.Options{})
+	h.AddTransport(transport.POST{})
+	h.SetQueryCache(lru.New[*ast.QueryDocument](1000))
+	// Retain the previous server's bounded APQ support while configuring the
+	// production transports and security extensions explicitly.
+	h.Use(extension.AutomaticPersistedQuery{Cache: lru.New[string](100)})
+	h.Use(extension.FixedComplexityLimit(cfg.ComplexityLimit))
+	if cfg.Introspection {
+		h.Use(extension.Introspection{})
+	}
+	// Parent resolvers record the selected language in this operation-scoped
+	// registry so nested Author resolvers cannot accidentally fall back to the
+	// Simplified Chinese tables.
+	h.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		return next(graph.WithLanguageState(ctx))
+	})
+	return h
+}
+
+func newHTTPServer(cfg *config.Config, httpHandler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
+		Handler:           httpHandler,
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+	}
+}
+
 // graphqlHandler 构造 GraphQL 请求的 Gin handler。
-func graphqlHandler(resolver *graph.Resolver) gin.HandlerFunc {
-	h := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{Resolvers: resolver}))
+func graphqlHandler(resolver *graph.Resolver, cfg config.GraphQLConfig) gin.HandlerFunc {
+	h := newGraphQLServer(resolver, cfg)
 
 	return func(c *gin.Context) {
+		if c.Request.ContentLength > cfg.MaxRequestBodyBytes {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return
+		}
+		originalBody := c.Request.Body
+		payload, err := io.ReadAll(io.LimitReader(originalBody, cfg.MaxRequestBodyBytes+1))
+		_ = originalBody.Close()
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+			return
+		}
+		if int64(len(payload)) > cfg.MaxRequestBodyBytes {
+			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{"error": "request body too large"})
+			return
+		}
+		c.Request.Body = io.NopCloser(bytes.NewReader(payload))
+		c.Request.ContentLength = int64(len(payload))
 		h.ServeHTTP(c.Writer, c.Request)
 	}
 }
@@ -46,11 +106,16 @@ func main() {
 	logger.Init(debug)
 	defer logger.Sync()
 
-	// 加载配置，失败则退回默认配置
-	cfg, err := config.Load("config.yaml")
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
+	// An explicit release configuration is part of the deployment contract.
+	// Missing, malformed, or invalid settings fail closed instead of silently
+	// starting with a different port, proxy trust boundary, or rate limit.
+	cfg, err := config.Load(configPath)
 	if err != nil {
-		logger.Warn("Failed to load config file, using defaults", zap.Error(err))
-		cfg, _ = config.Load("")
+		logger.Fatal("Failed to load configuration", zap.String("path", configPath), zap.Error(err))
 	}
 
 	logger.Info("Starting Chinese Poetry API server",
@@ -60,8 +125,10 @@ func main() {
 		zap.Int("max_idle_conns", cfg.Database.MaxIdleConns),
 	)
 
-	// 按配置的连接池参数打开数据库
-	db, err := database.Open(cfg.Database.Path, cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns)
+	// The API is read-only. Keep the verified release database immutable at
+	// runtime so startup checksums remain meaningful and no WAL/SHM sidecars are
+	// created inside the data volume.
+	db, err := database.OpenReadOnly(cfg.Database.Path, cfg.Database.MaxOpenConns, cfg.Database.MaxIdleConns)
 	if err != nil {
 		logger.Fatal("Failed to open database", zap.Error(err))
 	}
@@ -77,17 +144,14 @@ func main() {
 	router := rest.SetupRouter(cfg, db, repo)
 
 	// 注册 GraphQL 相关路由
-	router.POST("/graphql", graphqlHandler(resolver))
+	router.POST("/graphql", graphqlHandler(resolver, cfg.GraphQL))
 	if cfg.GraphQL.Playground {
 		router.GET("/playground", playgroundHandler())
 		logger.Info("GraphQL Playground enabled", zap.String("path", "/playground"))
 	}
 
 	// 构造 HTTP 服务
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler: router,
-	}
+	srv := newHTTPServer(cfg, router)
 
 	// 在独立协程中启动服务
 	go func() {

@@ -141,9 +141,18 @@ func PoemsFtsTable(lang Lang) string {
 	return "poems_fts_zh_hans"
 }
 
+// PoemSourcesTable 返回指定语言变体的来源 witness 表名。
+func PoemSourcesTable(lang Lang) string {
+	if lang == LangHant {
+		return "poem_sources_zh_hant"
+	}
+	return "poem_sources_zh_hans"
+}
+
 // 包内使用的小写版本
 func poemsTable(lang Lang) string       { return PoemsTable(lang) }
 func authorsTable(lang Lang) string     { return AuthorsTable(lang) }
 func dynastiesTable(lang Lang) string   { return DynastiesTable(lang) }
 func poetryTypesTable(lang Lang) string { return PoetryTypesTable(lang) }
 func poemsFtsTable(lang Lang) string    { return PoemsFtsTable(lang) }
+func poemSourcesTable(lang Lang) string { return PoemSourcesTable(lang) }

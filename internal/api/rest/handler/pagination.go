@@ -1,10 +1,6 @@
 package handler
 
-import (
-	"math"
-
-	"github.com/gin-gonic/gin"
-)
+import "github.com/gin-gonic/gin"
 
 // PaginationParams 保存分页参数。
 type PaginationParams struct {
@@ -21,12 +17,13 @@ func (p PaginationParams) Offset() int {
 const (
 	DefaultPage     = 1
 	DefaultPageSize = 20
+	MaxPage         = 1000
 	MaxPageSize     = 100
 )
 
 // ParsePagination 从请求上下文中解析分页参数。
 func ParsePagination(c *gin.Context) (PaginationParams, bool) {
-	page, ok := parseIntQuery(c, queryPage, DefaultPage, 1, math.MaxInt32)
+	page, ok := parseIntQuery(c, queryPage, DefaultPage, 1, MaxPage)
 	if !ok {
 		return PaginationParams{}, false
 	}

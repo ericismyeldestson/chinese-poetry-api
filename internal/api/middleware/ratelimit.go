@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -10,13 +11,13 @@ import (
 )
 
 const (
-	// idleTTL 是闲置的单客户端限流器的保留时长。它只需长于所跟踪的突发窗口即可：
-	// 客户端静默这么久之后，其令牌桶已经回满，此时丢弃它、待下次请求再新建一个，
-	// 与一直保留在效果上没有区别。
-	idleTTL = 10 * time.Minute
-
 	// sweepInterval 是回收过期限流器的间隔。
 	sweepInterval = time.Minute
+
+	// Bound per-client state even under a distributed source-IP spray. Clients
+	// beyond this cap share one overflow bucket until the next idle sweep frees
+	// tracked entries.
+	maxTrackedClients = 65536
 )
 
 // clientLimiter 是单个客户端的限流器及其最近一次使用时间。
@@ -31,6 +32,9 @@ type RateLimiter struct {
 	mu       sync.Mutex
 	rps      rate.Limit
 	burst    int
+	maxKeys  int
+	overflow *rate.Limiter
+	idleTTL  time.Duration
 
 	stop     chan struct{}
 	stopOnce sync.Once
@@ -39,13 +43,24 @@ type RateLimiter struct {
 // NewRateLimiter 创建限流器，并启动一个协程回收闲置超过 idleTTL 的限流器，
 // 用完需调用 Stop 释放。
 //
-// 若不回收，这个 map 只增不减：每个出现过的客户端 IP 都会占一个条目，
-// 而 ClientIP 会信任转发头，等于让攻击者控制 key 的取值范围。
+// Idle eviction and a hard key cap keep the state bounded. Router setup also
+// disables forwarded-client headers unless the operator explicitly configures
+// a trusted reverse proxy.
 func NewRateLimiter(rps float64, burst int) *RateLimiter {
+	// Eviction is safe only once an empty bucket would have refilled completely.
+	// Round up to avoid granting a fresh burst earlier than the configured rate.
+	refillSeconds := math.Ceil(float64(burst) / rps)
+	idleTTL := time.Duration(refillSeconds * float64(time.Second))
+	if idleTTL < sweepInterval {
+		idleTTL = sweepInterval
+	}
 	rl := &RateLimiter{
 		limiters: make(map[string]*clientLimiter),
 		rps:      rate.Limit(rps),
 		burst:    burst,
+		maxKeys:  maxTrackedClients,
+		overflow: rate.NewLimiter(rate.Limit(rps), burst),
+		idleTTL:  idleTTL,
 		stop:     make(chan struct{}),
 	}
 
@@ -79,7 +94,7 @@ func (rl *RateLimiter) sweep(now time.Time) {
 	defer rl.mu.Unlock()
 
 	for key, cl := range rl.limiters {
-		if now.Sub(cl.lastSeen) > idleTTL {
+		if now.Sub(cl.lastSeen) > rl.idleTTL {
 			delete(rl.limiters, key)
 		}
 	}
@@ -98,6 +113,9 @@ func (rl *RateLimiter) getLimiter(key string) *rate.Limiter {
 	if cl, exists := rl.limiters[key]; exists {
 		cl.lastSeen = now
 		return cl.limiter
+	}
+	if len(rl.limiters) >= rl.maxKeys {
+		return rl.overflow
 	}
 
 	limiter := rate.NewLimiter(rl.rps, rl.burst)

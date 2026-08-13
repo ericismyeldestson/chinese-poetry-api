@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -227,6 +228,12 @@ func TestListAuthorsWithFilter(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, 3, count)
 		assert.Len(t, authors, 3)
+		for _, author := range authors {
+			assert.NotNil(t, author.Dynasty)
+			if author.DynastyID != nil && author.Dynasty != nil {
+				assert.Equal(t, *author.DynastyID, author.Dynasty.ID)
+			}
+		}
 	})
 }
 
@@ -272,23 +279,31 @@ func TestSearchPoems(t *testing.T) {
 	}
 
 	t.Run("search by title", func(t *testing.T) {
-		results, total, err := repo.SearchPoems("静夜思", "all", 1, 10)
+		results, total, err := repo.SearchPoems(t.Context(), "静夜思", "all", 1, 10)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(results), 1)
 		assert.GreaterOrEqual(t, int(total), 1)
 	})
 
 	t.Run("search by content", func(t *testing.T) {
-		results, total, err := repo.SearchPoems("明月", "all", 1, 10)
+		results, total, err := repo.SearchPoems(t.Context(), "明月", "all", 1, 10)
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(results), 1)
 		assert.GreaterOrEqual(t, int(total), 1)
 	})
 
 	t.Run("no results", func(t *testing.T) {
-		results, total, err := repo.SearchPoems("不存在的内容", "all", 1, 10)
+		results, total, err := repo.SearchPoems(t.Context(), "不存在的内容", "all", 1, 10)
 		require.NoError(t, err)
 		assert.Len(t, results, 0)
 		assert.Equal(t, int64(0), total)
+	})
+
+	t.Run("canceled request context interrupts search", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		_, _, err := repo.SearchPoems(ctx, "静夜思", "all", 1, 10)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 }

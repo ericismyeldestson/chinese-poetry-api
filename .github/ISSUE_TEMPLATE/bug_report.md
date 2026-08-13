@@ -18,7 +18,7 @@ assignees: ''
 
 ```
 # 示例
-GET /v1/poems?dynasty=唐&page=1
+GET /api/v1/poems?dynasty=唐&page=1
 ```
 
 - 实际返回结果：
@@ -31,8 +31,9 @@ GET /v1/poems?dynasty=唐&page=1
 描述你期望得到的结果。
 
 **环境信息**
- - 部署方式：[ ] Docker  [ ] 源码编译  [ ] 在线版 (poetry.palemoky.com)
+ - 部署方式：[ ] GHCR 容器  [ ] 源码编译  [ ] 其他
  - 版本号（`docker inspect` 或 `git log` 查看）：
+ - 数据 release / manifest 版本：
  - 操作系统：
 
 **附加信息**

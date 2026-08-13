@@ -6,21 +6,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestGetOptimalConfig(t *testing.T) {
+func TestGetOptimalBufferSizes(t *testing.T) {
 	// 校验配置函数返回的取值是否合理
-	workBuf, resultBuf, errorBuf, defaultBatch, minBatch, maxBatch := getOptimalConfig()
+	workBuf, resultBuf, errorBuf := getOptimalBufferSizes()
 
 	// 所有取值都应为正数
 	assert.Greater(t, workBuf, 0, "workBuffer should be positive")
 	assert.Greater(t, resultBuf, 0, "resultBuffer should be positive")
 	assert.Greater(t, errorBuf, 0, "errorBuffer should be positive")
-	assert.Greater(t, defaultBatch, 0, "defaultBatch should be positive")
-	assert.Greater(t, minBatch, 0, "minBatch should be positive")
-	assert.Greater(t, maxBatch, 0, "maxBatch should be positive")
-
-	// 批量大小应满足 min <= default <= max
-	assert.LessOrEqual(t, minBatch, defaultBatch, "minBatch <= defaultBatch")
-	assert.LessOrEqual(t, defaultBatch, maxBatch, "defaultBatch <= maxBatch")
 }
 
 func TestNewProcessor(t *testing.T) {
@@ -58,6 +51,9 @@ func TestNewProcessor(t *testing.T) {
 			}
 		})
 	}
+
+	processor := NewProcessor(nil, 4, false)
+	assert.Equal(t, deterministicBatchSize, processor.batchSize)
 }
 
 func TestSetBatchSize(t *testing.T) {
@@ -100,8 +96,8 @@ func TestSetBatchSize(t *testing.T) {
 }
 
 // 基准测试
-func BenchmarkGetOptimalConfig(b *testing.B) {
+func BenchmarkGetOptimalBufferSizes(b *testing.B) {
 	for b.Loop() {
-		getOptimalConfig()
+		getOptimalBufferSizes()
 	}
 }

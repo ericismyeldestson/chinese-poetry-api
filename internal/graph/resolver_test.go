@@ -3,9 +3,13 @@ package graph
 import (
 	"context"
 	"fmt"
+	"strconv"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -13,8 +17,8 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/generated"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/generated"
 )
 
 // setupTestResolver 基于内存数据库创建测试用的 resolver。
@@ -22,6 +26,12 @@ func setupTestResolver(t *testing.T) (*Resolver, *database.Repository) {
 	// 创建内存数据库
 	gormDB, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
+	// SQLite gives each :memory: connection an independent database. Keep this
+	// test fixture on one connection so Hans and Hant operations in the same
+	// GraphQL request observe the schema created by Migrate.
+	sqlDB, err := gormDB.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
 
 	db := &database.DB{DB: gormDB}
 
@@ -41,6 +51,9 @@ func createTestClient(t *testing.T, resolver *Resolver) *client.Client {
 	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{
 		Resolvers: resolver,
 	}))
+	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		return next(WithLanguageState(ctx))
+	})
 	return client.New(srv)
 }
 
@@ -176,6 +189,60 @@ func TestSearchPoemsQuery(t *testing.T) {
 		err := c.Post(`query { searchPoems(query: "李白", searchType: AUTHOR) { totalCount } }`, &resp)
 		require.NoError(t, err)
 	})
+
+	t.Run("surrounding whitespace is trimmed", func(t *testing.T) {
+		var resp struct {
+			SearchPoems struct{ TotalCount int }
+		}
+		err := c.Post(`query { searchPoems(query: "  静夜思　", searchType: TITLE) { totalCount } }`, &resp)
+		require.NoError(t, err)
+		assert.Equal(t, 1, resp.SearchPoems.TotalCount)
+	})
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{"whitespace-only query is rejected", " \t　", "must not be empty"},
+		{"query above Unicode length cap is rejected", strings.Repeat("诗", 101), "at most 100 characters"},
+		{"short indexed query is rejected", "李白", "use type=author"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var resp struct{}
+			query := fmt.Sprintf(`query { searchPoems(query: %s) { totalCount } }`, strconv.Quote(tc.query))
+			err := c.Post(query, &resp)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+func TestSearchPoemsRejectsLikeSyntaxForIndexedSearch(t *testing.T) {
+	resolver, repo := setupTestResolver(t)
+	for i, title := range []string{"价格100%", "下划_线", `反斜\杠`} {
+		err := repo.InsertPoem(&database.Poem{
+			ID:      int64(900 + i),
+			Title:   title,
+			Content: datatypes.JSON([]byte(`["独特正文"]`)),
+		})
+		require.NoError(t, err)
+	}
+	c := createTestClient(t, resolver)
+
+	for _, queryText := range []string{
+		"100%",
+		"划_线",
+		`斜\杠`,
+	} {
+		t.Run(queryText, func(t *testing.T) {
+			var resp struct{}
+			query := fmt.Sprintf(`query { searchPoems(query: %s, searchType: TITLE) { totalCount } }`, strconv.Quote(queryText))
+			err := c.Post(query, &resp)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "does not accept LIKE wildcard characters")
+		})
+	}
 }
 
 func TestAuthorsQuery(t *testing.T) {
@@ -200,6 +267,147 @@ func TestAuthorsQuery(t *testing.T) {
 		assert.GreaterOrEqual(t, resp.Authors.TotalCount, 1)
 	})
 }
+
+func TestTraditionalAuthorAndStatisticsPreserveLanguageContext(t *testing.T) {
+	resolver, baseRepo := setupTestResolver(t)
+	hansRepo := baseRepo.WithLang(database.LangHans)
+	hantRepo := baseRepo.WithLang(database.LangHant)
+
+	const relationID int64 = 8001
+	require.NoError(t, resolver.DB.Table(database.DynastiesTable(database.LangHans)).Create(&database.Dynasty{
+		ID: relationID, Name: "简朝",
+	}).Error)
+	require.NoError(t, resolver.DB.Table(database.DynastiesTable(database.LangHant)).Create(&database.Dynasty{
+		ID: relationID, Name: "繁朝",
+	}).Error)
+	require.NoError(t, resolver.DB.Table(database.PoetryTypesTable(database.LangHans)).Create(&database.PoetryType{
+		ID: relationID, Name: "简体类", Category: "诗",
+	}).Error)
+	require.NoError(t, resolver.DB.Table(database.PoetryTypesTable(database.LangHant)).Create(&database.PoetryType{
+		ID: relationID, Name: "繁體類", Category: "詩",
+	}).Error)
+	require.NoError(t, resolver.DB.Table(database.AuthorsTable(database.LangHans)).Create(&database.Author{
+		ID: relationID, CanonicalID: database.CanonicalAuthorIDPrefix + strings.Repeat("8", 64), Name: "简体错误作者", DynastyID: ptrInt64(relationID),
+	}).Error)
+	require.NoError(t, resolver.DB.Table(database.AuthorsTable(database.LangHant)).Create(&database.Author{
+		ID: relationID, CanonicalID: database.CanonicalAuthorIDPrefix + strings.Repeat("8", 64), Name: "繁體正確作者", DynastyID: ptrInt64(relationID),
+	}).Error)
+
+	for i, title := range []string{"简体错误一", "简体错误二"} {
+		require.NoError(t, hansRepo.InsertPoem(&database.Poem{
+			ID:        8101 + int64(i),
+			Title:     title,
+			Content:   datatypes.JSON([]byte(`["简体正文"]`)),
+			AuthorID:  ptrInt64(relationID),
+			DynastyID: ptrInt64(relationID),
+			TypeID:    ptrInt64(relationID),
+		}))
+	}
+	require.NoError(t, hantRepo.InsertPoem(&database.Poem{
+		ID:        8101,
+		Title:     "繁體正確作品",
+		Content:   datatypes.JSON([]byte(`["繁體正文"]`)),
+		AuthorID:  ptrInt64(relationID),
+		DynastyID: ptrInt64(relationID),
+		TypeID:    ptrInt64(relationID),
+	}))
+
+	c := createTestClient(t, resolver)
+	var resp struct {
+		Author struct {
+			Name      string
+			PoemCount int
+			Poems     struct {
+				TotalCount int
+				Edges      []struct{ Node struct{ Title string } }
+			}
+		}
+		Authors struct {
+			Edges []struct {
+				Node struct {
+					Name      string
+					PoemCount int
+					Poems     struct{ TotalCount int }
+				}
+			}
+		}
+		Poems struct {
+			Edges []struct {
+				Node struct {
+					Title  string
+					Author struct {
+						Name      string
+						PoemCount int
+					}
+				}
+			}
+		}
+		Statistics struct {
+			PoemsByDynasty []struct {
+				Dynasty struct {
+					Name        string
+					PoemCount   int
+					AuthorCount int
+				}
+				Count int
+			}
+			PoemsByType []struct {
+				Type struct {
+					Name      string
+					PoemCount int
+				}
+				Count int
+			}
+		}
+	}
+	query := fmt.Sprintf(`query {
+		author(id: "%d", lang: ZH_HANT) { name poemCount poems { totalCount edges { node { title } } } }
+		authors(lang: ZH_HANT) { edges { node { name poemCount poems { totalCount } } } }
+		poems(lang: ZH_HANT, authorId: "%d") { edges { node { title author { name poemCount } } } }
+		statistics(lang: ZH_HANT) {
+			poemsByDynasty { dynasty { name poemCount authorCount } count }
+			poemsByType { type { name poemCount } count }
+		}
+	}`, relationID, relationID)
+	require.NoError(t, c.Post(query, &resp))
+
+	assert.Equal(t, "繁體正確作者", resp.Author.Name)
+	assert.Equal(t, 1, resp.Author.PoemCount)
+	assert.Equal(t, 1, resp.Author.Poems.TotalCount)
+	require.Len(t, resp.Author.Poems.Edges, 1)
+	assert.Equal(t, "繁體正確作品", resp.Author.Poems.Edges[0].Node.Title)
+	require.Len(t, resp.Authors.Edges, 1)
+	assert.Equal(t, "繁體正確作者", resp.Authors.Edges[0].Node.Name)
+	assert.Equal(t, 1, resp.Authors.Edges[0].Node.PoemCount)
+	assert.Equal(t, 1, resp.Authors.Edges[0].Node.Poems.TotalCount)
+	require.Len(t, resp.Poems.Edges, 1)
+	assert.Equal(t, "繁體正確作品", resp.Poems.Edges[0].Node.Title)
+	assert.Equal(t, "繁體正確作者", resp.Poems.Edges[0].Node.Author.Name)
+	assert.Equal(t, 1, resp.Poems.Edges[0].Node.Author.PoemCount)
+
+	var dynastyFound, typeFound bool
+	for _, stat := range resp.Statistics.PoemsByDynasty {
+		if stat.Dynasty.Name == "繁朝" {
+			dynastyFound = true
+			assert.Equal(t, 1, stat.Count)
+			assert.Equal(t, 1, stat.Dynasty.PoemCount)
+			assert.Equal(t, 1, stat.Dynasty.AuthorCount)
+		}
+		assert.NotEqual(t, "简朝", stat.Dynasty.Name)
+	}
+	for _, stat := range resp.Statistics.PoemsByType {
+		if stat.Type.Name == "繁體類" {
+			typeFound = true
+			assert.Equal(t, 1, stat.Count)
+			assert.Equal(t, 1, stat.Type.PoemCount)
+		}
+		assert.NotEqual(t, "简体类", stat.Type.Name)
+	}
+	assert.True(t, dynastyFound)
+	assert.True(t, typeFound)
+}
+
+func ptrInt64(value int64) *int64 { return &value }
 
 func TestDynastiesQuery(t *testing.T) {
 	resolver, repo := setupTestResolver(t)
@@ -238,6 +446,132 @@ func TestPoemTypesQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.GreaterOrEqual(t, len(resp.PoemTypes), 1)
 	})
+}
+
+func TestCollectionCountResolversUsePrefetchedStats(t *testing.T) {
+	resolver, repo := setupTestResolver(t)
+	dynastyID, _, _ := createTestData(t, repo)
+	c := createTestClient(t, resolver)
+
+	var resp struct {
+		Authors struct {
+			Edges []struct{ Node struct{ PoemCount int } }
+		}
+		Dynasties []struct {
+			ID          int64
+			PoemCount   int
+			AuthorCount int
+		}
+		PoemTypes []struct {
+			ID        int64
+			PoemCount int
+		}
+	}
+	require.NoError(t, c.Post(`query {
+		authors { edges { node { poemCount } } }
+		dynasties { id poemCount authorCount }
+		poemTypes { id poemCount }
+	}`, &resp))
+
+	require.NotEmpty(t, resp.Authors.Edges)
+	assert.Equal(t, 1, resp.Authors.Edges[0].Node.PoemCount)
+	for _, dynasty := range resp.Dynasties {
+		if dynasty.ID == dynastyID {
+			assert.Equal(t, 1, dynasty.PoemCount)
+			assert.Equal(t, 1, dynasty.AuthorCount)
+		}
+	}
+}
+
+func TestCollectionCountsAreResolvedWithoutNPlusOneQueries(t *testing.T) {
+	resolver, repo := setupTestResolver(t)
+	dynastyID, authorID, _ := createTestData(t, repo)
+	typeID := int64(12)
+	for i := 0; i < 12; i++ {
+		require.NoError(t, repo.InsertPoem(&database.Poem{
+			ID:        int64(9200 + i),
+			Title:     fmt.Sprintf("批量计数测试%d", i),
+			Content:   datatypes.JSON([]byte(`["批量计数正文"]`)),
+			AuthorID:  &authorID,
+			DynastyID: &dynastyID,
+			TypeID:    &typeID,
+		}))
+	}
+	for i := 0; i < 20; i++ {
+		additionalAuthorID, err := repo.GetOrCreateAuthor(fmt.Sprintf("批量作者%d", i), dynastyID)
+		require.NoError(t, err)
+		require.NoError(t, repo.InsertPoem(&database.Poem{
+			ID:        int64(9300 + i),
+			Title:     fmt.Sprintf("批量作者作品%d", i),
+			Content:   datatypes.JSON([]byte(`["批量作者正文"]`)),
+			AuthorID:  &additionalAuthorID,
+			DynastyID: &dynastyID,
+			TypeID:    &typeID,
+		}))
+	}
+	c := createTestClient(t, resolver)
+
+	var queryCount int64
+	callbackName := "test:count-collection-queries"
+	require.NoError(t, resolver.DB.Callback().Query().Before("gorm:query").Register(callbackName, func(*gorm.DB) {
+		atomic.AddInt64(&queryCount, 1)
+	}))
+	t.Cleanup(func() { _ = resolver.DB.Callback().Query().Remove(callbackName) })
+
+	var resp struct {
+		Authors struct {
+			Edges []struct {
+				Node struct {
+					PoemCount int
+					Dynasty   struct {
+						PoemCount   int
+						AuthorCount int
+					}
+				}
+			}
+		}
+		Dynasties []struct {
+			PoemCount   int
+			AuthorCount int
+		}
+		PoemTypes []struct{ PoemCount int }
+	}
+	require.NoError(t, c.Post(`query {
+		authors(pageSize: 100) { edges { node { poemCount dynasty { poemCount authorCount } } } }
+		dynasties { poemCount authorCount }
+		poemTypes { poemCount }
+	}`, &resp))
+
+	assert.LessOrEqual(t, atomic.LoadInt64(&queryCount), int64(8),
+		"collection sizes must not multiply count-query volume")
+	require.Len(t, resp.Authors.Edges, 21)
+	for _, edge := range resp.Authors.Edges {
+		assert.Equal(t, 21, edge.Node.Dynasty.AuthorCount)
+		assert.Equal(t, 33, edge.Node.Dynasty.PoemCount)
+	}
+
+	atomic.StoreInt64(&queryCount, 0)
+	var poemResp struct {
+		Poems struct {
+			Edges []struct {
+				Node struct {
+					Author  struct{ PoemCount int }
+					Dynasty struct {
+						PoemCount   int
+						AuthorCount int
+					}
+					Type struct{ PoemCount int }
+				}
+			}
+		}
+	}
+	require.NoError(t, c.Post(`query { poems(pageSize: 20) { edges { node {
+		author { poemCount }
+		dynasty { poemCount authorCount }
+		type { poemCount }
+	} } } }`, &poemResp))
+	assert.LessOrEqual(t, atomic.LoadInt64(&queryCount), int64(12),
+		"poem relation counts must be prefetched in fixed query volume")
 }
 
 func TestStatisticsQuery(t *testing.T) {
@@ -473,8 +807,9 @@ func TestPaginationBoundaries(t *testing.T) {
 		{"pageSize 0 is rejected", `query { poems(pageSize: 0) { totalCount } }`, "pageSize must be between"},
 		{"pageSize above the cap is rejected", `query { poems(pageSize: 500) { totalCount } }`, "pageSize must be between"},
 		// searchPoems 曾直接读取参数，完全没有做上限约束
-		{"searchPoems pageSize above the cap is rejected", `query { searchPoems(query: "李白", pageSize: 1000000) { totalCount } }`, "pageSize must be between"},
+		{"searchPoems pageSize above the cap is rejected", `query { searchPoems(query: "李太白", pageSize: 1000000) { totalCount } }`, "pageSize must be between"},
 		{"authors pageSize above the cap is rejected", `query { authors(pageSize: 500) { totalCount } }`, "pageSize must be between"},
+		{"deep page is rejected", `query { poems(page: 1001) { totalCount } }`, "page must be at most"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var resp struct{}
