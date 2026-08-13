@@ -238,9 +238,12 @@ for arch in amd64 arm64; do
                     .subject.platform == {os: "linux", architecture: $arch})
             ' "$attestation_manifest" >/dev/null ||
                 die "linux/$arch OCI artifact attestation is not bound to its image manifest"
-            [[ $(wc -c <"$attestation_config" | tr -d '[:space:]') == 2 ]] &&
-                [[ $(<"$attestation_config") == "{}" ]] ||
+            if ! {
+                [[ $(wc -c <"$attestation_config" | tr -d '[:space:]') == 2 ]] &&
+                    [[ $(<"$attestation_config") == "{}" ]]
+            }; then
                 die "linux/$arch OCI artifact attestation config is not the canonical empty object"
+            fi
             ;;
         *)
             die "linux/$arch attestation config media type is unsupported: $attestation_config_media_type"
