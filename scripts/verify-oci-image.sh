@@ -19,7 +19,7 @@ evidence_dir=${3:-}
 [[ -s $archive ]] || die "OCI archive is missing or empty: $archive"
 [[ $expected_revision =~ ^[0-9a-f]{40}$ ]] || die "expected revision must be a full Git SHA"
 
-for command in awk find jq sha256sum tar tr wc; do
+for command in awk find gzip jq sha256sum tar tr wc; do
     command -v "$command" >/dev/null 2>&1 || die "$command is required"
 done
 
@@ -150,8 +150,16 @@ for arch in amd64 arm64; do
         .config.Labels["org.opencontainers.image.licenses"] == "GPL-3.0-only"
     ' "$config" >/dev/null || die "linux/$arch runtime config contract failed"
 
+    layer_index=0
     while IFS=$'\t' read -r layer_digest layer_size; do
         verify_descriptor "$layer_digest" "$layer_size"
+        layer=$(blob_path "$layer_digest")
+        expected_diff_id=$(jq -er --argjson index "$layer_index" \
+            '.rootfs.diff_ids[$index]' "$config")
+        actual_diff_id=sha256:$(gzip -dc "$layer" | sha256sum | awk '{ print $1 }')
+        [[ $actual_diff_id == "$expected_diff_id" ]] ||
+            die "linux/$arch layer $layer_index does not match its runtime diff ID"
+        layer_index=$((layer_index + 1))
     done < <(jq -r '.layers[] | [.digest, (.size | tostring)] | @tsv' "$image_manifest")
 
     attestation_descriptors=()

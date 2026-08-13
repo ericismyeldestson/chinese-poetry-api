@@ -200,7 +200,7 @@ jobs:
     permissions:
       packages: write
     steps:
-      - name: Start and cancel an authenticated GHCR blob upload
+      - name: Probe authenticated GHCR blob upload authorization
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -276,20 +276,29 @@ jobs:
             --request DELETE --header "Authorization: Bearer ${registry_token}" \
             --header 'Content-Length: 0' \
             "$upload_url")
-          [[ $cancel_code == 204 ]] || {
+          if [[ $cancel_code == 204 ]]; then
+            after_code=$(curl --silent --show-error \
+              --output "$work_dir/after.body" --write-out '%{http_code}' \
+              --header "Authorization: Bearer ${registry_token}" "$upload_url")
+            [[ $after_code == 404 ]] || {
+              echo "Canceled GHCR upload is still addressable: HTTP ${after_code}" >&2
+              cat "$work_dir/after.body" >&2
+              exit 1
+            }
+            result="upload session was canceled and is no longer addressable"
+          elif [[ $cancel_code == 405 ]] && jq -e '
+            (.errors | type) == "array" and
+            (.errors | length) == 1 and
+            .errors[0].code == "UNSUPPORTED"
+          ' "$work_dir/cancel.body" >/dev/null; then
+            result="GHCR does not implement session cancellation; the empty session will expire"
+          else
+            echo "GHCR upload cancellation failed: HTTP ${cancel_code}" >&2
             cat "$work_dir/cancel.body" >&2
             exit 1
-          }
-          after_code=$(curl --silent --show-error \
-            --output "$work_dir/after.body" --write-out '%{http_code}' \
-            --header "Authorization: Bearer ${registry_token}" "$upload_url")
-          [[ $after_code == 404 ]] || {
-            echo "Canceled GHCR upload is still addressable: HTTP ${after_code}" >&2
-            cat "$work_dir/after.body" >&2
-            exit 1
-          }
+          fi
           upload_url=
-          echo "GHCR accepted and canceled an authenticated upload session; no blob or manifest was committed"
+          echo "GHCR accepted an authenticated upload session; ${result}; no blob or manifest was committed"
 
   license-contract:
     runs-on: ubuntu-latest
