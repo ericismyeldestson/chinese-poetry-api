@@ -297,9 +297,12 @@ for arch in amd64 arm64; do
                     "build-arg:VCS_REF"] == $revision and
                 .predicate.buildDefinition.externalParameters.request.root.request.args[
                     "vcs:revision"] == $revision and
-                .predicate.buildDefinition.externalParameters.request.root.request.args[
+                (.predicate.buildDefinition.externalParameters.request.root.request.args[
                     "vcs:source"] ==
-                    "https://github.com/ericismyeldestson/chinese-poetry-api.git" and
+                    "https://github.com/ericismyeldestson/chinese-poetry-api" or
+                 .predicate.buildDefinition.externalParameters.request.root.request.args[
+                    "vcs:source"] ==
+                    "https://github.com/ericismyeldestson/chinese-poetry-api.git") and
                 (.predicate.buildDefinition.resolvedDependencies | type) == "array" and
                 (.predicate.buildDefinition.resolvedDependencies | length) >= 2 and
                 all(.predicate.buildDefinition.resolvedDependencies[];
