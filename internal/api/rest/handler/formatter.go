@@ -1,6 +1,6 @@
 package handler
 
-import "github.com/palemoky/chinese-poetry-api/internal/database"
+import "github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 
 // formatDynasty 把朝代整理成 API 响应结构，不含 created_at。
 func formatDynasty(d *database.Dynasty) map[string]any {

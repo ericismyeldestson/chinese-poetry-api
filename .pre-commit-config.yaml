@@ -5,7 +5,7 @@
 repos:
   # Go linting with golangci-lint (modern, comprehensive)
   - repo: https://github.com/golangci/golangci-lint
-    rev: v2.7.2
+    rev: v2.12.2
     hooks:
       - id: golangci-lint
         name: Run golangci-lint
@@ -30,7 +30,7 @@ repos:
       # Format Go imports
       - id: goimports
         name: Format Go imports (goimports)
-        entry: goimports -w -local github.com/palemoky/chinese-poetry-api
+        entry: goimports -w -local github.com/ericismyeldestson/chinese-poetry-api
         language: system
         types: [go]
         stages: [pre-commit]
@@ -85,7 +85,7 @@ repos:
     hooks:
       - id: go-test
         name: Run Go unit tests
-        entry: bash -c 'go test -tags "fts5" ./internal/... -cover'
+        entry: bash -c 'go test -tags "sqlite_fts5" ./internal/... -cover'
         language: system
         stages: [pre-push]
         pass_filenames: false

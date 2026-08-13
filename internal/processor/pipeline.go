@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -16,10 +17,10 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/datatypes"
 
-	"github.com/palemoky/chinese-poetry-api/internal/classifier"
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/loader"
-	"github.com/palemoky/chinese-poetry-api/internal/logger"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/classifier"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/loader"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/logger"
 )
 
 const (
@@ -58,6 +59,61 @@ type Processor struct {
 	workers              int
 	convertToTraditional bool
 	batchSize            int // 写入数据库时的批量大小
+}
+
+// PartitionSources classifies source-level rejections exactly once, before the
+// Hans/Hant branches diverge. Rejected records remain represented in the global
+// source_rejections ledger; only accepted records proceed to product generation.
+func PartitionSources(poems []loader.PoemWithMeta) ([]loader.PoemWithMeta, []database.SourceRejection, error) {
+	accepted := make([]loader.PoemWithMeta, 0, len(poems))
+	rejections := make([]database.SourceRejection, 0)
+	for i := range poems {
+		poem := &poems[i]
+		if poem.RejectionReason == "" {
+			paragraphs := classifier.NormalizeAndSplitParagraphs(poem.Paragraphs)
+			switch {
+			case containsUnicodeReplacementCharacter(*poem):
+				poem.RejectionStage = "normalization"
+				poem.RejectionReason = "unicode_replacement_character"
+			case len(paragraphs) == 0:
+				poem.RejectionStage = "normalization"
+				poem.RejectionReason = "empty_after_normalization"
+			case classifier.IsPlaceholderContent(paragraphs):
+				poem.RejectionStage = "normalization"
+				poem.RejectionReason = "placeholder_content"
+			}
+		}
+
+		if poem.RejectionReason == "" {
+			accepted = append(accepted, *poem)
+			continue
+		}
+		if poem.RejectionStage == "" {
+			return nil, nil, fmt.Errorf("source %s#%d has a rejection reason without a stage", poem.SourcePath, poem.SourceRecordIndex)
+		}
+		rejection, err := database.NewSourceRejection(
+			poem.SourceID, poem.DatasetKey, poem.SourcePath, poem.SourceRecordIndex,
+			poem.RejectionStage, poem.RejectionReason,
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid rejection for source %s#%d: %w", poem.SourcePath, poem.SourceRecordIndex, err)
+		}
+		rejections = append(rejections, rejection)
+	}
+	return accepted, rejections, nil
+}
+
+func containsUnicodeReplacementCharacter(poem loader.PoemWithMeta) bool {
+	if strings.ContainsRune(poem.Title, '\uFFFD') || strings.ContainsRune(poem.Author, '\uFFFD') ||
+		strings.ContainsRune(poem.Chapter, '\uFFFD') || strings.ContainsRune(poem.Rhythmic, '\uFFFD') {
+		return true
+	}
+	for _, paragraph := range poem.Paragraphs {
+		if strings.ContainsRune(paragraph, '\uFFFD') {
+			return true
+		}
+	}
+	return false
 }
 
 // NewProcessor 创建带缓存能力的处理器，workers <= 0 时按 CPU 核数取值。
@@ -104,44 +160,73 @@ func (p *Processor) prewarmCache(poems []loader.PoemWithMeta) error {
 	}
 
 	// 串行预热朝代缓存，无并发风险
+	dynasties := make([]string, 0, len(dynastySet))
 	for dynasty := range dynastySet {
+		dynasties = append(dynasties, dynasty)
+	}
+	sort.Strings(dynasties)
+	for _, dynasty := range dynasties {
 		if _, err := p.repo.GetOrCreateDynasty(dynasty); err != nil {
 			return fmt.Errorf("failed to pre-warm dynasty cache for %q: %w", dynasty, err)
 		}
 	}
 
-	// 收集去重后的作者（约一万条，仍可接受）。
-	// 作者依赖朝代 ID，所以必须在朝代缓存预热之后执行。
-	authorSet := make(map[string]string) // 作者名 -> 朝代名
+	// 收集去重后的作者。身份键必须同时包含朝代，否则会把
+	// 数百个跨朝代同名人合并。
+	type authorWarmKey struct {
+		canonicalName    string
+		canonicalDynasty string
+		displayName      string
+		displayDynasty   string
+		canonicalID      string
+	}
+	authorSet := make(map[authorWarmKey]struct{})
 	for _, poem := range poems {
 		author := classifier.NormalizeText(poem.Author)
 		if author == "" {
 			author = "佚名"
 		}
-		converted, err := p.convertText(author, p.convertToTraditional)
+		canonicalName, err := canonicalSimplifiedText(author)
 		if err != nil {
 			continue
 		}
-		if _, exists := authorSet[converted]; !exists {
-			dynasty := poem.Dynasty
-			if dynasty != "" {
-				dynasty, _ = p.convertText(dynasty, p.convertToTraditional)
-			}
-			authorSet[converted] = dynasty
+		canonicalDynasty, err := canonicalSimplifiedText(poem.Dynasty)
+		if err != nil || canonicalDynasty == "" {
+			continue
 		}
+		canonicalID, err := database.NewCanonicalAuthorID(canonicalDynasty, canonicalName)
+		if err != nil {
+			continue
+		}
+		displayName, displayDynasty := canonicalName, canonicalDynasty
+		if p.convertToTraditional {
+			displayName, _ = classifier.ToTraditional(canonicalName)
+			displayDynasty, _ = classifier.ToTraditional(canonicalDynasty)
+		}
+		authorSet[authorWarmKey{
+			canonicalName: canonicalName, canonicalDynasty: canonicalDynasty,
+			displayName: displayName, displayDynasty: displayDynasty,
+			canonicalID: canonicalID,
+		}] = struct{}{}
 	}
 
 	// 预热作者缓存
-	for author, dynasty := range authorSet {
-		var dynastyID int64 = 0
-		if dynasty != "" {
-			var err error
-			dynastyID, err = p.repo.GetOrCreateDynasty(dynasty)
-			if err != nil {
-				continue // 留到正式处理阶段再报
-			}
+	authors := make([]authorWarmKey, 0, len(authorSet))
+	for author := range authorSet {
+		authors = append(authors, author)
+	}
+	sort.Slice(authors, func(i, j int) bool {
+		if authors[i].canonicalDynasty != authors[j].canonicalDynasty {
+			return authors[i].canonicalDynasty < authors[j].canonicalDynasty
 		}
-		if _, err := p.repo.GetOrCreateAuthor(author, dynastyID); err != nil {
+		return authors[i].canonicalName < authors[j].canonicalName
+	})
+	for _, author := range authors {
+		dynastyID, err := p.repo.GetOrCreateDynasty(author.displayDynasty)
+		if err != nil {
+			continue // 留到正式处理阶段再报
+		}
+		if _, err := p.repo.GetOrCreateCanonicalAuthor(author.canonicalID, author.displayName, dynastyID); err != nil {
 			continue // 预热失败不影响流程，正式处理时会重试
 		}
 	}
@@ -235,15 +320,15 @@ func (p *Processor) Process(poems []loader.PoemWithMeta) error {
 	// 启动批量写入 goroutine
 	insertDone := make(chan error, 1)
 	go func() {
-		insertDone <- p.batchInserter(resultCh)
+		insertDone <- p.batchInserter(resultCh, &errorCount)
 	}()
 
 	// 分发任务
 	go func() {
 		for i, poem := range poems {
 			workCh <- PoemWork{
-				PoemWithMeta: poem,
-				ID:           int64(i + 1), // 从 1 开始的顺序 ID
+				PoemWithMeta:  poem,
+				SourceOrdinal: int64(i + 1),
 			}
 		}
 		close(workCh)
@@ -296,7 +381,7 @@ func (p *Processor) Process(poems []loader.PoemWithMeta) error {
 
 // batchInserter 汇总处理完的诗词，用大事务批量写库。
 // 把大量 INSERT 合并到少数几个事务里，可显著降低 fsync 开销。
-func (p *Processor) batchInserter(resultCh <-chan *database.Poem) error {
+func (p *Processor) batchInserter(resultCh <-chan *database.Poem, processingErrors *atomic.Int64) error {
 	// 先收齐所有已处理的诗词，顺带过滤 nil 作为兜底
 	allPoems := make([]*database.Poem, 0, cap(resultCh))
 
@@ -307,6 +392,38 @@ func (p *Processor) batchInserter(resultCh <-chan *database.Poem) error {
 	}
 
 	if len(allPoems) == 0 {
+		return nil
+	}
+
+	// Worker completion order is nondeterministic. Sort by the canonical-derived
+	// public ID, full canonical ID, and source locator before persistence. The
+	// locator tie-breaker makes duplicate-witness aggregation independent of which
+	// worker completes first; repository preflight separately rejects any product
+	// field disagreement for the same canonical ID.
+	sort.Slice(allPoems, func(i, j int) bool {
+		left, right := allPoems[i], allPoems[j]
+		if left.ID != right.ID {
+			return left.ID < right.ID
+		}
+		leftCanonical, rightCanonical := "", ""
+		if left.CanonicalID != nil {
+			leftCanonical = *left.CanonicalID
+		}
+		if right.CanonicalID != nil {
+			rightCanonical = *right.CanonicalID
+		}
+		if leftCanonical != rightCanonical {
+			return leftCanonical < rightCanonical
+		}
+		return firstSourceLocator(left) < firstSourceLocator(right)
+	})
+
+	// 任一来源处理失败时禁止写出一个“看似成功但缺 witness”的成品集合。
+	// resultCh 已被完整消费，因此不会阻塞 worker；这里只终止数据库产品写入。
+	if processingErrors != nil && processingErrors.Load() > 0 {
+		logger.Warn("Skipping poem insertion because source records failed processing",
+			zap.Int64("failed_sources", processingErrors.Load()),
+		)
 		return nil
 	}
 
@@ -334,6 +451,19 @@ func (p *Processor) batchInserter(resultCh <-chan *database.Poem) error {
 	return nil
 }
 
+func firstSourceLocator(poem *database.Poem) string {
+	if poem == nil || len(poem.Sources) == 0 {
+		return ""
+	}
+	locator := poem.Sources[0].LocatorID
+	for _, source := range poem.Sources[1:] {
+		if source.LocatorID < locator {
+			locator = source.LocatorID
+		}
+	}
+	return locator
+}
+
 // resolveTitleByCategory 依据诗词类别决定最终标题，不同类别取自不同的源字段：
 //   - 词：取词牌名（rhythmic），若另有标题则拼成「词牌名·副标题」
 //   - 论语 / 四书五经：取章节名（chapter）
@@ -355,7 +485,7 @@ func resolveTitleByCategory(poem loader.PoemData, category string) string {
 		}
 		return poem.Title // 无章节名时回退到标题
 
-	default: // 唐诗、元曲、诗经、楚辞、蒙学等
+	default: // 诗、元曲、诗经、楚辞、蒙学等
 		return poem.Title
 	}
 }
@@ -364,86 +494,140 @@ func resolveTitleByCategory(poem loader.PoemData, category string) string {
 // 返回 (nil, nil) 表示该条目应被静默跳过。
 
 func (p *Processor) processPoem(work PoemWork) (*database.Poem, error) {
-	poem := work.PoemData
+	sourcePoem := work.PoemData
 
-	// 归一化各文本字段（去除首尾空白）。
-	// NormalizeAndSplitParagraphs 还会拆分被合并成一句的正文
-	// （如 "A。B。" → ["A。","B。"]）。
-	author := classifier.NormalizeText(poem.Author)
-	paragraphs := classifier.NormalizeAndSplitParagraphs(poem.Paragraphs)
-	rhythmic := classifier.NormalizeText(poem.Rhythmic)
+	// Normalize source text before the quality boundary. Paragraph normalization
+	// also splits merged sentences (for example "A。B。" into two entries).
+	sourceAuthor := classifier.NormalizeText(sourcePoem.Author)
+	sourceParagraphs := classifier.NormalizeAndSplitParagraphs(sourcePoem.Paragraphs)
+	sourceTitle := classifier.NormalizeText(sourcePoem.Title)
+	sourceChapter := classifier.NormalizeText(sourcePoem.Chapter)
+	sourceRhythmic := classifier.NormalizeText(sourcePoem.Rhythmic)
+	sourceDynasty := classifier.NormalizeText(work.Dynasty)
 
-	// 归一化后正文为空则跳过
-	if len(paragraphs) == 0 {
-		return nil, nil
+	// 每个加载出的 source locator 都必须落库或让构建显式失败，不能静默跳过。
+	if len(sourceParagraphs) == 0 {
+		return nil, fmt.Errorf("source record has no usable content")
 	}
 
-	// 跳过占位正文（无正文。/ 無正文。/ 空。）
-	if classifier.IsPlaceholderContent(paragraphs) {
-		return nil, nil
+	// 占位正文也属于被拒绝的源记录，必须显式报告。
+	if classifier.IsPlaceholderContent(sourceParagraphs) {
+		return nil, fmt.Errorf("source record contains placeholder content")
 	}
 
-	if author == "" {
-		author = "佚名"
+	if sourceAuthor == "" {
+		sourceAuthor = "佚名"
 	}
-	// 只要有正文即可入库，允许没有正式标题
 
-	// 统一简繁：繁体库转繁体，简体库转简体
-	author, err := p.convertText(author, p.convertToTraditional)
+	// Canonical v2 first converts every identity-affecting field into one fixed
+	// simplified script. Classification, title selection, identity, and both
+	// localized products all derive from this representation. This collapses the
+	// same work when one upstream witness is simplified and another traditional,
+	// while preserving both raw source locators in the provenance tables.
+	canonicalAuthor, err := canonicalSimplifiedText(sourceAuthor)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert author: %w", err)
+		return nil, fmt.Errorf("failed to canonicalize author: %w", err)
 	}
-
-	paragraphs, err = p.convertTextArray(paragraphs, p.convertToTraditional)
+	canonicalParagraphs, err := canonicalSimplifiedParagraphs(sourceParagraphs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to convert paragraphs: %w", err)
+		return nil, fmt.Errorf("failed to canonicalize paragraphs: %w", err)
+	}
+	canonicalTitle, err := canonicalSimplifiedText(sourceTitle)
+	if err != nil {
+		return nil, fmt.Errorf("failed to canonicalize title: %w", err)
+	}
+	canonicalChapter, err := canonicalSimplifiedText(sourceChapter)
+	if err != nil {
+		return nil, fmt.Errorf("failed to canonicalize chapter: %w", err)
+	}
+	canonicalRhythmic, err := canonicalSimplifiedText(sourceRhythmic)
+	if err != nil {
+		return nil, fmt.Errorf("failed to canonicalize rhythmic: %w", err)
+	}
+	canonicalDynasty, err := canonicalSimplifiedText(sourceDynasty)
+	if err != nil {
+		return nil, fmt.Errorf("failed to canonicalize dynasty: %w", err)
 	}
 
-	if rhythmic != "" {
-		rhythmic, err = p.convertText(rhythmic, p.convertToTraditional)
+	canonicalPoem := loader.PoemData{
+		Title:      canonicalTitle,
+		Chapter:    canonicalChapter,
+		Author:     canonicalAuthor,
+		Paragraphs: canonicalParagraphs,
+		Rhythmic:   canonicalRhythmic,
+	}
+	typeInfo := classifier.ClassifyPoetryTypeWithDataset(
+		canonicalParagraphs, canonicalRhythmic, work.DatasetKey, canonicalTitle,
+	)
+	canonicalFinalTitle := classifier.NormalizeText(resolveTitleByCategory(canonicalPoem, typeInfo.Category))
+	canonicalTypeName, err := canonicalSimplifiedText(typeInfo.TypeName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to canonicalize poetry type: %w", err)
+	}
+
+	// SHA-512 commits the same v2 input independently and lets persistence fail
+	// closed if a SHA-256 canonical ID is ever reused for different work text.
+	canonicalID, canonicalFingerprint := canonicalIdentity(
+		canonicalDynasty, canonicalAuthor, canonicalFinalTitle, canonicalParagraphs,
+	)
+	poemID, err := stablePoemID(canonicalID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive stable poem ID: %w", err)
+	}
+	witness, err := sourceWitness(work.PoemWithMeta)
+	if err != nil {
+		return nil, fmt.Errorf("invalid source provenance: %w", err)
+	}
+
+	// Hans is the canonical representation itself. Hant is derived from that same
+	// representation, never chosen from whichever source witness a worker happens
+	// to finish first.
+	author := canonicalAuthor
+	paragraphs := canonicalParagraphs
+	dynastyName := canonicalDynasty
+	typeName := canonicalTypeName
+	finalTitle := canonicalFinalTitle
+	if p.convertToTraditional {
+		author, err = classifier.ToTraditional(canonicalAuthor)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert rhythmic: %w", err)
+			return nil, fmt.Errorf("failed to localize author: %w", err)
+		}
+		paragraphs, err = classifier.ToTraditionalArray(canonicalParagraphs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to localize paragraphs: %w", err)
+		}
+		dynastyName, err = classifier.ToTraditional(canonicalDynasty)
+		if err != nil {
+			return nil, fmt.Errorf("failed to localize dynasty: %w", err)
+		}
+		typeName, err = classifier.ToTraditional(canonicalTypeName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to localize poetry type: %w", err)
+		}
+		finalTitle, err = classifier.ToTraditional(canonicalFinalTitle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to localize final title: %w", err)
 		}
 	}
 
-	// 朝代名同样要转成与目标库一致的简繁形式
-	dynastyName, err := p.convertText(work.Dynasty, p.convertToTraditional)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert dynasty name: %w", err)
-	}
 	dynastyID, err := p.repo.GetOrCreateDynasty(dynastyName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get/create dynasty: %w", err)
 	}
 
-	authorID, err := p.repo.GetOrCreateAuthor(author, dynastyID)
+	canonicalAuthorID, err := database.NewCanonicalAuthorID(canonicalDynasty, canonicalAuthor)
+	if err != nil {
+		return nil, fmt.Errorf("failed to derive canonical author identity: %w", err)
+	}
+	authorID, err := p.repo.GetOrCreateCanonicalAuthor(canonicalAuthorID, author, dynastyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get/create author: %w", err)
-	}
-
-	// 结合数据集来源与标题判定诗词体裁
-	typeInfo := classifier.ClassifyPoetryTypeWithDataset(paragraphs, rhythmic, work.DatasetKey, poem.Title)
-
-	typeName, err := p.convertText(typeInfo.TypeName, p.convertToTraditional)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert type name: %w", err)
 	}
 
 	typeID, err := p.repo.GetPoetryTypeID(typeName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get poetry type: %w", err)
 	}
-
-	// 按类别在 title / rhythmic / chapter 之间挑选最终标题
-	finalTitle := resolveTitleByCategory(poem, typeInfo.Category)
-
-	finalTitle, err = p.convertText(finalTitle, p.convertToTraditional)
-	if err != nil {
-		return nil, fmt.Errorf("failed to convert final title: %w", err)
-	}
-
-	// 使用分发阶段分配的顺序 ID
-	poemID := work.ID
 
 	// 正文以 JSON 数组形式存储
 	contentJSON, err := json.Marshal(paragraphs)
@@ -460,16 +644,39 @@ func (p *Processor) processPoem(work PoemWork) (*database.Poem, error) {
 	contentHash := hex.EncodeToString(hash[:])
 
 	dbPoem := &database.Poem{
-		ID:          poemID,
-		Title:       finalTitle, // 按类别选出的标题，可能来自 title/rhythmic/chapter
-		AuthorID:    &authorID,
-		DynastyID:   &dynastyID,
-		TypeID:      &typeID,
-		Content:     datatypes.JSON(contentJSON),
-		ContentHash: contentHash,
+		ID:                   poemID,
+		Title:                finalTitle, // 按类别选出的标题，可能来自 title/rhythmic/chapter
+		AuthorID:             &authorID,
+		DynastyID:            &dynastyID,
+		TypeID:               &typeID,
+		Content:              datatypes.JSON(contentJSON),
+		ContentHash:          contentHash,
+		CanonicalID:          &canonicalID,
+		CanonicalFingerprint: &canonicalFingerprint,
+		Sources:              []database.PoemSource{witness},
 	}
 
 	return dbPoem, nil
+}
+
+// canonicalSimplifiedText is the single script-normalization boundary for v2
+// work identity. Keep whitespace normalization on both sides so a converter
+// implementation cannot accidentally introduce identity-relevant edge spaces.
+func canonicalSimplifiedText(text string) (string, error) {
+	converted, err := classifier.ToSimplified(classifier.NormalizeText(text))
+	if err != nil {
+		return "", err
+	}
+	return classifier.NormalizeText(converted), nil
+}
+
+func canonicalSimplifiedParagraphs(paragraphs []string) ([]string, error) {
+	normalized := classifier.NormalizeAndSplitParagraphs(paragraphs)
+	converted, err := classifier.ToSimplifiedArray(normalized)
+	if err != nil {
+		return nil, err
+	}
+	return classifier.NormalizeAndSplitParagraphs(converted), nil
 }
 
 // convertText 按 toTraditional 标志把文本转为繁体或简体。
@@ -478,12 +685,4 @@ func (p *Processor) convertText(text string, toTraditional bool) (string, error)
 		return classifier.ToTraditional(text)
 	}
 	return classifier.ToSimplified(text)
-}
-
-// convertTextArray 按 toTraditional 标志批量转换文本的简繁形式。
-func (p *Processor) convertTextArray(texts []string, toTraditional bool) ([]string, error) {
-	if toTraditional {
-		return classifier.ToTraditionalArray(texts)
-	}
-	return classifier.ToSimplifiedArray(texts)
 }

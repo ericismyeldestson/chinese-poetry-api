@@ -46,6 +46,12 @@ data/
 *.sqlite
 *.sqlite3
 
+# Keep the machine-readable source/release contract under version control while
+# continuing to ignore generated databases and other local data products.
+!data/
+data/*
+!data/source-manifest.json
+
 # Config overrides
 config.local.yaml
 .env

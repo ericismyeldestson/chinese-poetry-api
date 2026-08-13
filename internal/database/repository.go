@@ -1,6 +1,8 @@
 package database
 
 import (
+	"context"
+
 	"github.com/vbauerster/mpb/v8"
 )
 
@@ -8,6 +10,7 @@ import (
 type RepositoryInterface interface {
 	GetOrCreateDynasty(name string) (int64, error)
 	GetOrCreateAuthor(name string, dynastyID int64) (int64, error)
+	GetOrCreateCanonicalAuthor(canonicalID, name string, dynastyID int64) (int64, error)
 	GetPoetryTypeID(name string) (int64, error)
 	GetPoetryTypeIDs(names []string) ([]int64, error)
 	InsertPoem(poem *Poem) error
@@ -21,7 +24,7 @@ type RepositoryInterface interface {
 	ListPoemsWithFilter(limit, offset int, dynastyID, authorID *int64, typeIDs []int64) ([]Poem, int, error)
 	ListAuthorPoems(authorID int64, limit, offset int) ([]Poem, int, error)
 	ListAuthorsWithFilter(limit, offset int, dynastyID *int64) ([]AuthorWithStats, int, error)
-	SearchPoems(query string, searchType string, page, pageSize int) ([]Poem, int64, error)
+	SearchPoems(ctx context.Context, query string, searchType string, page, pageSize int) ([]Poem, int64, error)
 }
 
 // Repository 负责所有数据库操作。
@@ -52,9 +55,11 @@ func (r *Repository) authorsTable() string     { return AuthorsTable(r.lang) }
 func (r *Repository) dynastiesTable() string   { return DynastiesTable(r.lang) }
 func (r *Repository) poetryTypesTable() string { return PoetryTypesTable(r.lang) }
 func (r *Repository) poemsFtsTable() string    { return PoemsFtsTable(r.lang) }
+func (r *Repository) poemSourcesTable() string { return PoemSourcesTable(r.lang) }
 
 // 供外部包（如搜索模块）使用的导出访问器
-func (r *Repository) DB() *DB                { return r.db }
-func (r *Repository) PoemsTable() string     { return r.poemsTable() }
-func (r *Repository) AuthorsTable() string   { return r.authorsTable() }
-func (r *Repository) DynastiesTable() string { return r.dynastiesTable() }
+func (r *Repository) DB() *DB                  { return r.db }
+func (r *Repository) PoemsTable() string       { return r.poemsTable() }
+func (r *Repository) AuthorsTable() string     { return r.authorsTable() }
+func (r *Repository) DynastiesTable() string   { return r.dynastiesTable() }
+func (r *Repository) PoemSourcesTable() string { return r.poemSourcesTable() }

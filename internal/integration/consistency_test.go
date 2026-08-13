@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/99designs/gqlgen/client"
+	"github.com/99designs/gqlgen/graphql"
 	"github.com/99designs/gqlgen/graphql/handler"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -16,11 +18,11 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"github.com/palemoky/chinese-poetry-api/internal/api/rest"
-	"github.com/palemoky/chinese-poetry-api/internal/config"
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/graph"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/generated"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/api/rest"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/config"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/generated"
 )
 
 // setupTestEnv 搭建同时包含 REST 与 GraphQL 的测试环境。
@@ -48,6 +50,9 @@ func setupTestEnv(t *testing.T) (*gin.Engine, *client.Client, *database.Reposito
 	srv := handler.NewDefaultServer(generated.NewExecutableSchema(generated.Config{
 		Resolvers: resolver,
 	}))
+	srv.AroundOperations(func(ctx context.Context, next graphql.OperationHandler) graphql.ResponseHandler {
+		return next(graph.WithLanguageState(ctx))
+	})
 	graphqlClient := client.New(srv)
 
 	return restRouter, graphqlClient, repo
@@ -107,9 +112,9 @@ func TestSearchConsistency(t *testing.T) {
 		searchType string
 	}{
 		{"search by title", "静夜思", "title"},
-		{"search by content", "明月", "content"},
+		{"search by content", "明月光", "content"},
 		{"search by author", "李白", "author"},
-		{"search all", "李白", "all"},
+		{"search all", "静夜思", "all"},
 	}
 
 	for _, tt := range tests {
@@ -310,7 +315,7 @@ func TestPaginationConsistency(t *testing.T) {
 	createTestData(t, repo)
 
 	// REST 接口
-	restReq := httptest.NewRequest(http.MethodGet, "/api/v1/poems/search?q=李白&page=1&page_size=1", nil)
+	restReq := httptest.NewRequest(http.MethodGet, "/api/v1/poems/search?q=李白&type=author&page=1&page_size=1", nil)
 	restResp := httptest.NewRecorder()
 	restRouter.ServeHTTP(restResp, restReq)
 
@@ -343,7 +348,7 @@ func TestPaginationConsistency(t *testing.T) {
 		}
 	}
 
-	query := `query { searchPoems(query: "李白", page: 1, pageSize: 1) {
+	query := `query { searchPoems(query: "李白", searchType: AUTHOR, page: 1, pageSize: 1) {
 		edges { node { id } }
 		pageInfo { hasNextPage hasPreviousPage }
 		totalCount

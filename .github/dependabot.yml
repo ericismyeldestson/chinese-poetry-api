@@ -32,7 +32,18 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
-    ignore:
-      - dependency-name: "*"
-        update-types:
-          - "version-update:semver-patch"
+
+  # Runtime and builder base images
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(container)"
+    labels:
+      - "dependencies"
+      - "container"

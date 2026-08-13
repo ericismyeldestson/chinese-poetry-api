@@ -10,37 +10,46 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/generated"
-	"github.com/palemoky/chinese-poetry-api/internal/graph/model"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/api/searchquery"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/generated"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/graph/model"
 )
 
 // Poems is the resolver for the poems field.
-//
-// 注意：该字段没有 lang 参数，而 gqlgen 解析子字段时用的是原始请求上下文，
-// 父查询的 lang 传不到这里，因此这里返回的始终是简体。
-// 给 Author.poems 单独加一个 lang 参数可以解决，但那属于 schema 变更。
 func (r *authorResolver) Poems(ctx context.Context, obj *database.Author, page *int, pageSize *int) (*database.PoemConnection, error) {
 	pag, err := parsePagination(page, pageSize)
 	if err != nil {
 		return nil, err
 	}
-
-	poems, totalCount, err := r.Repo.ListAuthorPoems(obj.ID, pag.PageSize, pag.Offset)
+	lang, err := authorLanguage(ctx, obj)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildPoemConnection(poems, pag, totalCount), nil
+	poems, totalCount, err := r.Repo.WithLang(lang).ListAuthorPoems(obj.ID, pag.PageSize, pag.Offset)
+	if err != nil {
+		return nil, err
+	}
+
+	connection := buildPoemConnection(poems, pag, totalCount)
+	registerPoemConnectionLanguage(ctx, connection, lang)
+	if err := r.prefetchPoemRelationCounts(ctx, lang, poems); err != nil {
+		return nil, err
+	}
+	return connection, nil
 }
 
 // PoemCount is the resolver for the poemCount field.
-//
-// 这里以及 Dynasty、PoetryType 上的计数都走默认的简体表。
-// 与上面的 Author.poems 一样读不到查询的 lang，但此处无妨：
-// 简繁两套表是同一份语料的互转结果，计数完全一致。
 func (r *authorResolver) PoemCount(ctx context.Context, obj *database.Author) (int, error) {
-	return r.Repo.CountPoemsByAuthor(obj.ID)
+	lang, err := authorLanguage(ctx, obj)
+	if err != nil {
+		return 0, err
+	}
+	if count, ok := authorCount(ctx, lang, obj.ID); ok {
+		return count, nil
+	}
+	return r.Repo.WithLang(lang).CountPoemsByAuthor(obj.ID)
 }
 
 // Node is the resolver for the node field.
@@ -50,12 +59,26 @@ func (r *authorEdgeResolver) Node(ctx context.Context, obj *database.AuthorEdge)
 
 // PoemCount is the resolver for the poemCount field.
 func (r *dynastyResolver) PoemCount(ctx context.Context, obj *database.Dynasty) (int, error) {
-	return r.Repo.CountPoemsByDynasty(obj.ID)
+	lang, err := languageForPath(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if counts, ok := dynastyStats(ctx, lang, obj.ID); ok {
+		return counts.poems, nil
+	}
+	return r.Repo.WithLang(lang).CountPoemsByDynasty(obj.ID)
 }
 
 // AuthorCount is the resolver for the authorCount field.
 func (r *dynastyResolver) AuthorCount(ctx context.Context, obj *database.Dynasty) (int, error) {
-	return r.Repo.CountAuthorsByDynasty(obj.ID)
+	lang, err := languageForPath(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if counts, ok := dynastyStats(ctx, lang, obj.ID); ok {
+		return counts.authors, nil
+	}
+	return r.Repo.WithLang(lang).CountAuthorsByDynasty(obj.ID)
 }
 
 // Content is the resolver for the content field.
@@ -69,17 +92,26 @@ func (r *poemResolver) Content(ctx context.Context, obj *database.Poem) ([]strin
 
 // PoemCount is the resolver for the poemCount field.
 func (r *poetryTypeResolver) PoemCount(ctx context.Context, obj *database.PoetryType) (int, error) {
-	return r.Repo.CountPoemsByType(obj.ID)
+	lang, err := languageForPath(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if count, ok := typeCount(ctx, lang, obj.ID); ok {
+		return count, nil
+	}
+	return r.Repo.WithLang(lang).CountPoemsByType(obj.ID)
 }
 
 // Poem is the resolver for the poem field.
 func (r *queryResolver) Poem(ctx context.Context, id string, lang *database.Lang) (*database.Poem, error) {
-	repo := r.Repo.WithLang(parseLang(lang))
+	langVal := parseLang(lang)
+	repo := r.Repo.WithLang(langVal)
 
 	poem, err := repo.GetPoemByID(id)
 	if err != nil {
 		return nil, err
 	}
+	registerPoemLanguage(ctx, poem, langVal)
 	return poem, nil
 }
 
@@ -111,17 +143,28 @@ func (r *queryResolver) Poems(ctx context.Context, lang *database.Lang, page *in
 		typeIDs = []int64{*typeIDInt}
 	}
 
-	repo := r.Repo.WithLang(parseLang(lang))
+	langVal := parseLang(lang)
+	repo := r.Repo.WithLang(langVal)
 	poems, totalCount, err := repo.ListPoemsWithFilter(pag.PageSize, pag.Offset, dynastyIDInt, authorIDInt, typeIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildPoemConnection(poems, pag, totalCount), nil
+	connection := buildPoemConnection(poems, pag, totalCount)
+	registerPoemConnectionLanguage(ctx, connection, langVal)
+	if err := r.prefetchPoemRelationCounts(ctx, langVal, poems); err != nil {
+		return nil, err
+	}
+	return connection, nil
 }
 
 // SearchPoems is the resolver for the searchPoems field.
 func (r *queryResolver) SearchPoems(ctx context.Context, query string, lang *database.Lang, searchType *model.SearchType, page *int, pageSize *int) (*database.PoemConnection, error) {
+	query, err := searchquery.Normalize(query)
+	if err != nil {
+		return nil, err
+	}
+
 	// 统一走公共的解析函数，而非直接读取参数——
 	// 后者正是本 resolver 曾经绕过 pageSize 上限的原因。
 	pag, err := parsePagination(page, pageSize)
@@ -141,10 +184,17 @@ func (r *queryResolver) SearchPoems(ctx context.Context, query string, lang *dat
 			st = "author"
 		}
 	}
+	if st != "author" {
+		if err := searchquery.ValidateIndexedLength(query); err != nil {
+			return nil, err
+		}
+	} else if err := searchquery.ValidateLiteralSubstring(query); err != nil {
+		return nil, err
+	}
 
 	langVal := parseLang(lang)
 	repo := r.Repo.WithLang(langVal)
-	poems, total, err := repo.SearchPoems(query, st, pag.Page, pag.PageSize)
+	poems, total, err := repo.SearchPoems(ctx, query, st, pag.Page, pag.PageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +202,12 @@ func (r *queryResolver) SearchPoems(ctx context.Context, query string, lang *dat
 	// 用公共函数构造 connection，不再手写。手写版本的游标在每页内都从 0 开始编号，
 	// 导致第 2 页首条边的游标与第 1 页的相同；而且没有填 startCursor 与 endCursor，
 	// 与其他所有 connection 的行为不一致。
-	return buildPoemConnection(poems, pag, int(total)), nil
+	connection := buildPoemConnection(poems, pag, int(total))
+	registerPoemConnectionLanguage(ctx, connection, langVal)
+	if err := r.prefetchPoemRelationCounts(ctx, langVal, poems); err != nil {
+		return nil, err
+	}
+	return connection, nil
 }
 
 // RandomPoem is the resolver for the randomPoem field.
@@ -177,7 +232,12 @@ func (r *queryResolver) RandomPoem(ctx context.Context, lang *database.Lang, dyn
 	// 与 REST 一致，带语言上下文调用仓储层的 GetRandomPoem
 	langVal := parseLang(lang)
 	repo := r.Repo.WithLang(langVal)
-	return repo.GetRandomPoem(dynastyIDInt, nil, typeIDs)
+	poem, err := repo.GetRandomPoem(dynastyIDInt, nil, typeIDs)
+	if err != nil {
+		return nil, err
+	}
+	registerPoemLanguage(ctx, poem, langVal)
+	return poem, nil
 }
 
 // Author is the resolver for the author field.
@@ -188,7 +248,13 @@ func (r *queryResolver) Author(ctx context.Context, id string, lang *database.La
 	}
 
 	// 走 Repository 的方法，由它处理动态表名
-	return r.Repo.WithLang(parseLang(lang)).GetAuthorByID(authorID)
+	langVal := parseLang(lang)
+	author, err := r.Repo.WithLang(langVal).GetAuthorByID(authorID)
+	if err != nil {
+		return nil, err
+	}
+	registerAuthorLanguage(ctx, author, langVal)
+	return author, nil
 }
 
 // Authors is the resolver for the authors field.
@@ -203,40 +269,108 @@ func (r *queryResolver) Authors(ctx context.Context, lang *database.Lang, page *
 		return nil, err
 	}
 
-	repo := r.Repo.WithLang(parseLang(lang))
+	langVal := parseLang(lang)
+	repo := r.Repo.WithLang(langVal)
 	authors, totalCount, err := repo.ListAuthorsWithFilter(pag.PageSize, pag.Offset, dynastyIDInt)
 	if err != nil {
 		return nil, err
 	}
 
-	return buildAuthorConnection(authors, pag, totalCount), nil
+	connection := buildAuthorConnection(authors, pag, totalCount)
+	registerAuthorConnectionLanguage(ctx, connection, langVal)
+	for _, author := range authors {
+		cacheAuthorCount(ctx, langVal, author.ID, author.PoemCount)
+	}
+	if err := r.prefetchAuthorDynastyStats(ctx, langVal, authors); err != nil {
+		return nil, err
+	}
+	return connection, nil
 }
 
 // Dynasties is the resolver for the dynasties field.
 func (r *queryResolver) Dynasties(ctx context.Context, lang *database.Lang) ([]*database.Dynasty, error) {
-	var dynasties []*database.Dynasty
 	langVal := parseLang(lang)
-	err := r.DB.Table(database.DynastiesTable(langVal)).Order("id").Find(&dynasties).Error
+	dynastyTable := database.DynastiesTable(langVal)
+	poemTable := database.PoemsTable(langVal)
+	var rows []struct {
+		database.Dynasty
+		PoemCount   int `gorm:"column:poem_count"`
+		AuthorCount int `gorm:"column:author_count"`
+	}
+	err := r.DB.Table(dynastyTable).
+		Select(dynastyTable + ".*, COUNT(" + poemTable + ".id) AS poem_count, COUNT(DISTINCT " + poemTable + ".author_id) AS author_count").
+		Joins("LEFT JOIN " + poemTable + " ON " + dynastyTable + ".id = " + poemTable + ".dynasty_id").
+		Group(dynastyTable + ".id").Order(dynastyTable + ".id").Scan(&rows).Error
 	if err != nil {
 		return nil, err
+	}
+	dynasties := make([]*database.Dynasty, len(rows))
+	registerEntityLanguage(ctx, langVal)
+	for i := range rows {
+		dynasties[i] = &rows[i].Dynasty
+		cacheDynastyStats(ctx, langVal, rows[i].ID, rows[i].PoemCount, rows[i].AuthorCount)
 	}
 	return dynasties, nil
 }
 
 // PoemTypes is the resolver for the poemTypes field.
 func (r *queryResolver) PoemTypes(ctx context.Context, lang *database.Lang) ([]*database.PoetryType, error) {
-	var types []*database.PoetryType
 	langVal := parseLang(lang)
-	err := r.DB.Table(database.PoetryTypesTable(langVal)).Order("id").Find(&types).Error
+	typeTable := database.PoetryTypesTable(langVal)
+	poemTable := database.PoemsTable(langVal)
+	var rows []struct {
+		database.PoetryType
+		PoemCount int `gorm:"column:poem_count"`
+	}
+	err := r.DB.Table(typeTable).
+		Select(typeTable + ".*, COUNT(" + poemTable + ".id) AS poem_count").
+		Joins("LEFT JOIN " + poemTable + " ON " + typeTable + ".id = " + poemTable + ".type_id").
+		Group(typeTable + ".id").Order(typeTable + ".id").Scan(&rows).Error
 	if err != nil {
 		return nil, err
+	}
+	types := make([]*database.PoetryType, len(rows))
+	registerEntityLanguage(ctx, langVal)
+	for i := range rows {
+		types[i] = &rows[i].PoetryType
+		cacheTypeCount(ctx, langVal, rows[i].ID, rows[i].PoemCount)
 	}
 	return types, nil
 }
 
 // Statistics is the resolver for the statistics field.
 func (r *queryResolver) Statistics(ctx context.Context, lang *database.Lang) (*database.Statistics, error) {
-	return r.Repo.GetStatistics()
+	langVal := parseLang(lang)
+	stats, err := r.Repo.WithLang(langVal).GetStatistics()
+	if err != nil {
+		return nil, err
+	}
+	registerEntityLanguage(ctx, langVal)
+
+	dynastyPoemCounts := make(map[int64]int, len(stats.PoemsByDynasty))
+	for _, stat := range stats.PoemsByDynasty {
+		dynastyPoemCounts[stat.ID] = stat.PoemCount
+		cacheDynastyStats(ctx, langVal, stat.ID, stat.PoemCount, 0)
+	}
+	if len(dynastyPoemCounts) > 0 {
+		var rows []struct {
+			ID          int64 `gorm:"column:id"`
+			AuthorCount int   `gorm:"column:author_count"`
+		}
+		if err := r.DB.Table(database.PoemsTable(langVal)).
+			Select("dynasty_id AS id, COUNT(DISTINCT author_id) AS author_count").
+			Where("dynasty_id IN ?", mapKeysForCounts(dynastyPoemCounts)).
+			Group("dynasty_id").Scan(&rows).Error; err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			cacheDynastyStats(ctx, langVal, row.ID, dynastyPoemCounts[row.ID], row.AuthorCount)
+		}
+	}
+	for _, stat := range stats.PoemsByType {
+		cacheTypeCount(ctx, langVal, stat.ID, stat.PoemCount)
+	}
+	return stats, nil
 }
 
 // PoemsByDynasty is the resolver for the poemsByDynasty field.

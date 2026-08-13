@@ -1,7 +1,7 @@
 package graph
 
 import (
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // 本文件不会被自动重新生成。

@@ -19,25 +19,82 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version-file: go.mod
+          go-version: 1.25.12
           cache: true
 
       - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v9
+        uses: golangci/golangci-lint-action@db9de0fc1a667e1a49d2291a1a042dff081d78f6 # v9
         with:
-          version: latest
+          version: v2.12.2
+
+      - name: Run go vet
+        run: go vet -tags sqlite_fts5 ./...
 
       - name: Run tests
-        run: go test -tags fts5 -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -tags sqlite_fts5 -v -race -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@a99c28d3f0da835de33ff2feb2e15691c7b9641f # v7
         with:
           files: ./coverage.out
           flags: unittests
           fail_ci_if_error: false
+
+  vulnerability-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.25.12
+          cache: true
+      - name: Scan reachable Go vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
+  data-quality-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout without the large data submodule
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          submodules: false
+      - name: Verify pinned data provenance contract
+        run: sh scripts/verify-data-contract.sh --contract-only
+      - name: Run atomic startup regression scenarios
+        run: sh scripts/test-startup.sh
+      - name: Lint release shell scripts
+        run: shellcheck scripts/startup.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/test-startup.sh
+      - name: Validate Compose model
+        run: docker compose config --quiet
+
+  container-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Build the runtime image
+        run: docker build --build-arg VCS_REF="${{ github.sha }}" --tag chinese-poetry-api:ci .
+
+  license-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.25.12
+          cache: true
+      - name: Verify reachable dependency licenses and bundled notices
+        run: sh scripts/verify-license-contract.sh

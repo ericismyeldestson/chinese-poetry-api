@@ -3,127 +3,233 @@ name: Release Data
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.0" # Only trigger on v*.*.0 tags (e.g., v0.1.0, v0.2.0, v1.0.0)
-  workflow_dispatch:
+      - "v*.*.0"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  process-data:
+  build-data:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v7
+      - name: Validate stable data-release tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.0$ ]]; then
+            echo "Data releases require a stable vMAJOR.MINOR.0 tag" >&2
+            exit 1
+          fi
+      - name: Checkout exact source and data revisions
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
           submodules: recursive
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
+      - name: Verify image-to-data version pairing
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          grep -Fq "DATA_RELEASE_VERSION=${RELEASE_TAG}" Dockerfile
+          grep -Fq "DATA_RELEASE_VERSION: \${DATA_RELEASE_VERSION:-${RELEASE_TAG}}" docker-compose.yml
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
-          go-version: "1.25"
-
-      - name: Install dependencies
-        run: go mod download
-
+          go-version: 1.25.12
+          cache: true
+      - name: Verify pinned source contract
+        run: sh scripts/verify-data-contract.sh --contract-only
+      - name: Run atomic startup regression scenarios
+        run: sh scripts/test-startup.sh
+      - name: Run data pipeline tests
+        run: go test -race -tags sqlite_fts5 ./...
+      - name: Run static and license analysis before creating any release
+        run: |
+          go vet -tags sqlite_fts5 ./...
+          sh scripts/verify-license-contract.sh
+      - name: Scan reachable Go vulnerabilities before creating any release
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
       - name: Build processor
-        run: go build -tags fts5 -o processor ./cmd/processor
         env:
           CGO_ENABLED: 1
-
-      - name: Process poetry data
+        run: go build -tags sqlite_fts5 -trimpath -o processor ./cmd/processor
+      - name: Rebuild database from source
+        run: ./processor --input poetry-data --output poetry.db
+      - name: Verify generated database contract
         run: |
-          ./processor \
-            --input poetry-data \
-            --output poetry.db
-
-      - name: Compress databases
+          test -s poetry.db.source-report.json
+          sh scripts/verify-data-contract.sh \
+            --database poetry.db \
+            --source-report poetry.db.source-report.json
+      - name: Rebuild and prove byte reproducibility
         run: |
-          gzip -9 poetry.db
-          sha256sum *.db.gz > checksums.txt
-
-      - name: Collect statistics
-        id: stats
+          ./processor --input poetry-data --output poetry-repro.db
+          cmp poetry.db poetry-repro.db
+          cmp poetry.db.source-report.json poetry-repro.db.source-report.json
+          rm poetry-repro.db poetry-repro.db.source-report.json
+      - name: Generate deterministic release provenance manifest
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          PIPELINE_COMMIT: ${{ github.sha }}
         run: |
-          # 解压临时统计
-          gunzip -k poetry.db.gz
-
-          # 统计数据
-          POEMS=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM poems_zh_hans')
-          AUTHORS=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM authors_zh_hans')
-          DYNASTIES=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM dynasties_zh_hans')
-
-          echo "poems=$POEMS" >> $GITHUB_OUTPUT
-          echo "authors=$AUTHORS" >> $GITHUB_OUTPUT
-          echo "dynasties=$DYNASTIES" >> $GITHUB_OUTPUT
-
-          # 清理临时文件
-          rm poetry.db
-
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v3
+          SCHEMA_VERSION=$(jq -er '.pipeline.schema_version' data/source-manifest.json)
+          SOURCE_REPORT=poetry.db.source-report.json
+          SOURCE_REPORT_SHA=$(sha256sum "$SOURCE_REPORT" | awk '{ print $1 }')
+          SOURCE_REPORT_SCHEMA=$(jq -er '.schema_version' "$SOURCE_REPORT")
+          SOURCE_REPORT_TOTALS=$(jq -c '.totals' "$SOURCE_REPORT")
+          DATABASE_SHA=$(sha256sum poetry.db | awk '{ print $1 }')
+          POEMS_HANS=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM poems_zh_hans')
+          POEMS_HANT=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM poems_zh_hant')
+          AUTHORS_HANS=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM authors_zh_hans')
+          AUTHORS_HANT=$(sqlite3 poetry.db 'SELECT COUNT(*) FROM authors_zh_hant')
+          COMMIT_EPOCH=$(git show -s --format=%ct "$PIPELINE_COMMIT")
+          GENERATED_AT=$(date -u -d "@${COMMIT_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)
+          jq -n \
+            --arg source_repository "https://github.com/chinese-poetry/chinese-poetry.git" \
+            --arg source_commit "$(git -C poetry-data rev-parse HEAD)" \
+            --arg pipeline_repository "https://github.com/${{ github.repository }}.git" \
+            --arg pipeline_commit "$PIPELINE_COMMIT" \
+            --arg generated_at "$GENERATED_AT" \
+            --arg release_tag "$RELEASE_TAG" \
+            --arg database_asset "poetry.db.gz" \
+            --arg database_sha "$DATABASE_SHA" \
+            --arg source_report_asset "$SOURCE_REPORT" \
+            --arg source_report_sha "$SOURCE_REPORT_SHA" \
+            --argjson schema_version "$SCHEMA_VERSION" \
+            --argjson source_report_schema "$SOURCE_REPORT_SCHEMA" \
+            --argjson source_report_totals "$SOURCE_REPORT_TOTALS" \
+            --argjson poems_hans "$POEMS_HANS" \
+            --argjson poems_hant "$POEMS_HANT" \
+            --argjson authors_hans "$AUTHORS_HANS" \
+            --argjson authors_hant "$AUTHORS_HANT" \
+            '{schema_version:$schema_version, release_tag:$release_tag, generated_at:$generated_at,
+              source:{repository:$source_repository,commit:$source_commit,license:"MIT"},
+              pipeline:{repository:$pipeline_repository,commit:$pipeline_commit},
+              database:{asset:$database_asset,uncompressed_asset:"poetry.db",sha256:$database_sha},
+              statistics:{poems_zh_hans:$poems_hans,poems_zh_hant:$poems_hant,
+                authors_zh_hans:$authors_hans,authors_zh_hant:$authors_hant},
+              source_report:{asset:$source_report_asset,sha256:$source_report_sha,
+                schema_version:$source_report_schema,totals:$source_report_totals}}' \
+            > data-source-manifest.json
+          EXPECTED_RELEASE_TAG="$RELEASE_TAG" sh scripts/verify-data-contract.sh \
+            --database poetry.db \
+            --source-report "$SOURCE_REPORT" \
+            --manifest data-source-manifest.json
+      - name: Assemble flat, self-verifying release assets
+        run: |
+          mkdir release-assets
+          DATABASE_SHA=$(sha256sum poetry.db | awk '{ print $1 }')
+          printf '%s  poetry.db\n' "$DATABASE_SHA" > release-assets/checksums.txt
+          gzip -n -9 -c poetry.db > release-assets/poetry.db.gz
+          cp poetry.db.source-report.json data-source-manifest.json NOTICE release-assets/
+          cp licenses/chinese-poetry-MIT.txt licenses/hanconv-MIT.txt \
+            licenses/opencc-dictionaries-Apache-2.0.txt \
+            licenses/opencc-dictionaries.SHA256 release-assets/
+          (
+            cd release-assets
+            sha256sum poetry.db.gz poetry.db.source-report.json data-source-manifest.json \
+              NOTICE chinese-poetry-MIT.txt hanconv-MIT.txt \
+              opencc-dictionaries-Apache-2.0.txt opencc-dictionaries.SHA256 >> checksums.txt
+            awk '$2 != "poetry.db" { print }' checksums.txt | sha256sum -c -
+          )
+      - name: Upload verified data bundle for the publishing job
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          name: poetry-data-release-${{ github.sha }}
+          path: release-assets/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  publish-data:
+    needs: build-data
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    steps:
+      - name: Download the read-only build product
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: poetry-data-release-${{ github.sha }}
+          path: release-assets
+      - name: Refuse to mutate an existing release and recheck assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}" >/tmp/existing-release.json 2>/tmp/release-error; then
+            echo "Release ${RELEASE_TAG} already exists; immutable releases are never overwritten" >&2
+            exit 1
+          fi
+          grep -q 'HTTP 404' /tmp/release-error || {
+            cat /tmp/release-error >&2
+            exit 1
+          }
+          expected='NOTICE checksums.txt chinese-poetry-MIT.txt data-source-manifest.json hanconv-MIT.txt opencc-dictionaries-Apache-2.0.txt opencc-dictionaries.SHA256 poetry.db.gz poetry.db.source-report.json'
+          actual=$(find release-assets -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
+          [ "$actual" = "$expected" ] || {
+            echo "Unexpected release asset set: $actual" >&2
+            exit 1
+          }
+          (
+            cd release-assets
+            awk '$2 != "poetry.db" { print }' checksums.txt | sha256sum -c -
+          )
+      - name: Attest database build provenance
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        with:
+          subject-path: release-assets/poetry.db.gz
+      - name: Create immutable data release
+        uses: softprops/action-gh-release@c12583777ecdfd3be55c69cf75464299dc01057e # v3
+        with:
+          token: ${{ github.token }}
+          working_directory: release-assets
+          target_commitish: ${{ github.sha }}
+          overwrite_files: false
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
+          make_latest: false
           files: |
             poetry.db.gz
             checksums.txt
+            data-source-manifest.json
+            poetry.db.source-report.json
+            NOTICE
+            chinese-poetry-MIT.txt
+            hanconv-MIT.txt
+            opencc-dictionaries-Apache-2.0.txt
+            opencc-dictionaries.SHA256
           body: |
-            ## 诗词数据库 ${{ github.ref_name }}
+            ## Versioned poetry database ${{ github.ref_name }}
 
-            ### 📊 数据统计
-            | 项目 | 数量 |
-            |------|------|
-            | 诗词总数 | ${{ steps.stats.outputs.poems }} |
-            | 作者数量 | ${{ steps.stats.outputs.authors }} |
-            | 朝代数量 | ${{ steps.stats.outputs.dynasties }} |
-
-            ### 📦 文件说明
-            | 文件 | 说明 |
-            |------|------|
-            | `poetry.db.gz` | 统一数据库（包含简体和繁体表） |
-            | `checksums.txt` | SHA256 校验和 |
-
-            ### 🌏 多语言支持
-            API 通过 `?lang=` 参数切换：
-            - `zh-Hans` - 简体中文（默认）
-            - `zh-Hant` - 繁体中文
-
-            ### 🚀 快速开始
-            容器启动时会自动下载数据库，无需手动下载。
+            This database was rebuilt twice from the exact source and pipeline
+            revisions recorded in `data-source-manifest.json`; both raw SQLite
+            files and both source reports matched byte for byte. It is an
+            Internet-assembled corpus, not an authoritative critical edition.
+            Verify `checksums.txt` before use.
 
             ```bash
-            docker run -d -p 1279:1279 palemoky/chinese-poetry-api:latest
+            # The image is published only after this data-release job succeeds.
+            docker run -d -p 127.0.0.1:1279:1279 -v poetry-data:/app/data \
+              ghcr.io/${{ github.repository }}:${{ github.ref_name }}
             ```
 
-            详细使用说明请参考 [README](https://github.com/${{ github.repository }}#readme)
-
-      - name: Notify Success
-        if: success() && github.event_name != 'pull_request'
-        run: |
-          if [ -n "${{ vars.SPEAKER_WEBHOOK_URL }}" ]; then
-            curl -X POST "${{ vars.SPEAKER_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${{ secrets.SPEAKER_TOKEN }}" \
-            -H "CF-Access-Client-Id: ${{ secrets.CF_CLIENT_ID }}" \
-            -H "CF-Access-Client-Secret: ${{ secrets.CF_CLIENT_SECRET }}" \
-            -d '{"message": "${{ github.event.repository.name }}: poetry data ${{ github.ref_name }} has been processed and released!"}' || true
-          fi
-
-      - name: Notify Failure
-        if: failure() && github.event_name != 'pull_request'
-        run: |
-          if [ -n "${{ vars.SPEAKER_WEBHOOK_URL }}" ]; then
-            curl -X POST "${{ vars.SPEAKER_WEBHOOK_URL }}" \
-            -H "Content-Type: application/json" \
-            -H "X-API-Key: ${{ secrets.SPEAKER_TOKEN }}" \
-            -H "CF-Access-Client-Id: ${{ secrets.CF_CLIENT_ID }}" \
-            -H "CF-Access-Client-Secret: ${{ secrets.CF_CLIENT_SECRET }}" \
-            -d '{"message": "${{ github.event.repository.name }}: Mayday! Mayday! Poetry data ${{ github.ref_name }} processing failed. Check the logs."}' || true
-          fi
+  release-image:
+    needs: publish-data
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    uses: ./.github/workflows/release-image.yml
+    with:
+      release_tag: ${{ github.ref_name }}
+      release_sha: ${{ github.sha }}

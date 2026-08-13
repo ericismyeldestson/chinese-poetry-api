@@ -110,7 +110,6 @@ clean:
 deps:
 	@echo "$(BLUE)安装依赖...$(NC)"
 	@go mod download
-	@go get github.com/99designs/gqlgen@latest
 	@echo "$(GREEN)✓ 依赖安装完成$(NC)"
 
 ## tidy: 整理依赖
@@ -127,13 +126,16 @@ fmt:
 	@$(MAKE) --no-print-directory gofumpt
 	@echo "$(GREEN)✓ 代码格式化完成$(NC)"
 
-# gofumpt: 对全仓库执行 gofumpt -w，未安装时退回 go fmt 并提示
+# gofumpt: 格式化本项目 Go 源码；licenses/ 中包含必须与选定模块逐字节一致的
+# MPL Corresponding Source，poetry-data/ 也是固定外部输入，两者都不得被改写。
 gofumpt:
 	@if command -v gofumpt >/dev/null 2>&1; then \
-		gofumpt -w . ; \
+		find . -type f -name '*.go' \
+			-not -path './licenses/*' \
+			-not -path './poetry-data/*' -print0 | xargs -0 gofumpt -w ; \
 	else \
 		echo "$(YELLOW)gofumpt 未安装，退回 go fmt（结果可能仍不满足 lint）$(NC)"; \
-		echo "安装: go install mvdan.cc/gofumpt@latest"; \
+		echo "安装: go install mvdan.cc/gofumpt@v0.9.2"; \
 		go fmt ./... >/dev/null; \
 	fi
 
@@ -196,7 +198,7 @@ fuzz:
 # 注意 golangci-lint fmt 修不了这一条，必须用 gofumpt。
 graphql-gen:
 	@echo "$(BLUE)生成GraphQL代码...$(NC)"
-	@go run github.com/99designs/gqlgen generate
+	@go run github.com/99designs/gqlgen@v0.17.90 generate
 	@$(MAKE) --no-print-directory gofumpt
 	@echo "$(GREEN)✓ GraphQL代码生成完成$(NC)"
 
@@ -238,27 +240,27 @@ dev:
 		air; \
 	else \
 		echo "$(YELLOW)air 未安装，使用普通模式运行$(NC)"; \
-		echo "安装 air: go install github.com/cosmtrek/air@latest"; \
+		echo "请按 CONTRIBUTING.md 安装项目固定版本的 air"; \
 		make run-server; \
 	fi
 
 ## docker-build: 构建Docker镜像
 docker-build:
 	@echo "$(BLUE)构建Docker镜像...$(NC)"
-	@docker build -t chinese-poetry-api:latest .
+	@docker build -t ghcr.io/ericismyeldestson/chinese-poetry-api:dev .
 	@echo "$(GREEN)✓ Docker镜像构建完成$(NC)"
 
 ## docker-run: 运行Docker容器
 docker-run:
 	@echo "$(BLUE)启动Docker容器...$(NC)"
-	@docker-compose up -d
+	@docker compose up -d
 	@echo "$(GREEN)✓ Docker容器已启动$(NC)"
 	@echo "  API: http://localhost:1279"
 
 ## docker-stop: 停止Docker容器
 docker-stop:
 	@echo "$(YELLOW)停止Docker容器...$(NC)"
-	@docker-compose down
+	@docker compose down
 	@echo "$(GREEN)✓ Docker容器已停止$(NC)"
 
 ## install: 安装到系统

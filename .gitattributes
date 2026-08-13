@@ -1,0 +1,4 @@
+# Third-party license texts and MPL Corresponding Source are intentionally
+# preserved byte-for-byte. Do not normalize or report their upstream whitespace;
+# scripts/verify-license-contract.sh enforces exact selected-module content.
+licenses/** -text -whitespace

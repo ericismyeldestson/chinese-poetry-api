@@ -3,10 +3,10 @@ package rest
 import (
 	"github.com/gin-gonic/gin"
 
-	"github.com/palemoky/chinese-poetry-api/internal/api/middleware"
-	"github.com/palemoky/chinese-poetry-api/internal/api/rest/handler"
-	"github.com/palemoky/chinese-poetry-api/internal/config"
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/api/middleware"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/api/rest/handler"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/config"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 // SetupRouter 初始化 Gin 路由并注册全部接口。
@@ -15,6 +15,15 @@ func SetupRouter(cfg *config.Config, db *database.DB, repo *database.Repository)
 	gin.SetMode(cfg.Server.Mode)
 
 	router := gin.New()
+	// Gin historically trusted every proxy by default. Always apply the
+	// configured list explicitly; nil means that forwarded headers are ignored
+	// and ClientIP is derived from the peer address.
+	if err := router.SetTrustedProxies(cfg.Server.TrustedProxies); err != nil {
+		// Config.Load validates this before startup. Keep manually constructed
+		// configurations fail-closed instead of silently trusting an unintended
+		// proxy range.
+		panic("invalid trusted proxies: " + err.Error())
+	}
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
 

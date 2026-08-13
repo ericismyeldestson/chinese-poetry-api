@@ -133,6 +133,7 @@ func (r *Repository) GetStatistics() (*Statistics, error) {
 func (r *Repository) ListAuthorsWithFilter(limit, offset int, dynastyID *int64) ([]AuthorWithStats, int, error) {
 	authorTable := r.authorsTable()
 	poemTable := r.poemsTable()
+	dynastyTable := r.dynastiesTable()
 
 	query := r.db.Table(authorTable)
 
@@ -166,10 +167,36 @@ func (r *Repository) ListAuthorsWithFilter(limit, offset int, dynastyID *int64) 
 
 	// 转换为对外的 AuthorWithStats
 	authors := make([]AuthorWithStats, len(results))
+	dynastyIDs := make([]int64, 0, len(results))
+	seenDynasties := make(map[int64]struct{}, len(results))
 	for i, r := range results {
 		authors[i] = AuthorWithStats{
 			Author:    r.Author,
 			PoemCount: r.PoemCount,
+		}
+		if r.DynastyID != nil {
+			if _, exists := seenDynasties[*r.DynastyID]; !exists {
+				seenDynasties[*r.DynastyID] = struct{}{}
+				dynastyIDs = append(dynastyIDs, *r.DynastyID)
+			}
+		}
+	}
+
+	// Populate dynasty in one bounded query so GraphQL collection fields do not
+	// silently return null or regress into an author-count N+1 pattern.
+	if len(dynastyIDs) > 0 {
+		var dynasties []Dynasty
+		if err := r.db.Table(dynastyTable).Where("id IN ?", dynastyIDs).Find(&dynasties).Error; err != nil {
+			return nil, 0, err
+		}
+		byID := make(map[int64]*Dynasty, len(dynasties))
+		for i := range dynasties {
+			byID[dynasties[i].ID] = &dynasties[i]
+		}
+		for i := range authors {
+			if authors[i].DynastyID != nil {
+				authors[i].Dynasty = byID[*authors[i].DynastyID]
+			}
 		}
 	}
 

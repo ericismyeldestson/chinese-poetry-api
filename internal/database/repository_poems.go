@@ -1,14 +1,33 @@
 package database
 
 import (
+	"context"
 	"crypto/rand"
 	"math/big"
 	"strconv"
+	"strings"
 
 	"gorm.io/gorm"
 )
 
 // 本文件包含 Repository 的诗词查询方法。
+
+// literalLikePredicate 构造包含匹配，并在调用方输入含 SQL LIKE 元字符时
+// 使用反斜杠逐字转义。普通输入不附加 ESCAPE 子句，以保留 SQLite FTS5
+// trigram 对 LIKE 模式的索引优化路径。
+func literalLikePredicate(column, value string) (predicate, pattern string) {
+	pattern = "%" + value + "%"
+	if !strings.ContainsAny(value, `%_\`) {
+		return column + " LIKE ?", pattern
+	}
+
+	escaped := strings.NewReplacer(
+		`\`, `\\`,
+		`%`, `\%`,
+		`_`, `\_`,
+	).Replace(value)
+	return column + ` LIKE ? ESCAPE '\'`, "%" + escaped + "%"
+}
 
 // GetPoemByID 按 ID 查询单首诗词，并加载全部关联数据。
 func (r *Repository) GetPoemByID(id string) (*Poem, error) {
@@ -153,9 +172,8 @@ func (r *Repository) loadPoemRelations(poems []Poem) {
 // ListPoemsWithFilter 按可选条件分页查询诗词列表。
 // 多个 typeID 之间是 OR 关系，与 GetRandomPoem 的行为保持一致。
 //
-// 结果固定按 id 升序排列：诗词 ID 是导入时顺序分配的（见 processor.Pipeline），
-// 因此升序即语料本身的顺序，与「最新」无关。本仓储的所有分页查询都用同一排序，
-// 以保证 REST 与 GraphQL 对「第 N 页」的理解一致。
+// 结果固定按 canonical-derived id 升序排列。这个顺序不表示语料来源顺序或
+// 新旧，只提供跨请求、跨语言和相同输入重建的一致分页顺序。
 func (r *Repository) ListPoemsWithFilter(limit, offset int, dynastyID, authorID *int64, typeIDs []int64) ([]Poem, int, error) {
 	query := r.db.Table(r.poemsTable())
 
@@ -242,11 +260,11 @@ func (r *Repository) GetRandomPoem(dynastyID, authorID *int64, typeIDs []int64) 
 func (r *Repository) GetRandomPoemByChar(char string) (*Poem, error) {
 	poemTable := r.poemsTable()
 	ftsTable := r.poemsFtsTable()
-	pattern := "%" + char + "%"
+	predicate, pattern := literalLikePredicate(ftsTable+".content_text", char)
 
 	matches := func(q *gorm.DB) *gorm.DB {
 		return q.Joins("JOIN "+ftsTable+" ON "+ftsTable+".rowid = "+poemTable+".id").
-			Where(ftsTable+".content_text LIKE ?", pattern)
+			Where(predicate, pattern)
 	}
 
 	// 统计命中数量
@@ -299,10 +317,18 @@ func (r *Repository) ListAuthorPoems(authorID int64, limit, offset int) ([]Poem,
 
 // SearchPoems 基于建立在标题与正文上的 FTS5 trigram 索引搜索诗词，
 // 索引的创建见 migrateFtsForLang。trigram 分词器使得 LIKE '%...%' 可以走 FTS 索引，
-// 无需全表扫描 poems，同时保留子串匹配语义——包括 FTS5 经典 MATCH 无法处理的
-// 单字、双字中文查询。
+// 无需全表扫描 poems，同时保留至少 3 字符的子串匹配语义。API 层拒绝短查询
+// 和 LIKE 语法字符，避免触发不能利用 trigram 索引的慢路径。
 // searchType 可取："all"、"title"、"content"、"author"。
-func (r *Repository) SearchPoems(query string, searchType string, page, pageSize int) ([]Poem, int64, error) {
+func (r *Repository) SearchPoems(ctx context.Context, query string, searchType string, page, pageSize int) ([]Poem, int64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// Bind every count, page query, and relation lookup below to the request
+	// lifetime so an HTTP/GraphQL cancellation interrupts SQLite work.
+	scoped := *r
+	scoped.db = &DB{DB: r.db.WithContext(ctx)}
+	r = &scoped
 	if page < 1 {
 		page = 1
 	}
@@ -311,11 +337,13 @@ func (r *Repository) SearchPoems(query string, searchType string, page, pageSize
 	}
 
 	offset := (page - 1) * pageSize
-	pattern := "%" + query + "%"
 	poemTable := r.poemsTable()
 	authorTable := r.authorsTable()
 	ftsTable := r.poemsFtsTable()
 	ftsJoin := "JOIN " + ftsTable + " ON " + ftsTable + ".rowid = " + poemTable + ".id"
+	titlePredicate, pattern := literalLikePredicate(ftsTable+".title", query)
+	contentPredicate, _ := literalLikePredicate(ftsTable+".content_text", query)
+	authorPredicate, _ := literalLikePredicate(authorTable+".name", query)
 
 	var poems []Poem
 	var total int64
@@ -323,14 +351,16 @@ func (r *Repository) SearchPoems(query string, searchType string, page, pageSize
 	switch searchType {
 	case "title":
 		// 仅搜标题，走 FTS trigram 索引
-		r.db.Table(poemTable).
+		if err := r.db.Table(poemTable).
 			Joins(ftsJoin).
-			Where(ftsTable+".title LIKE ?", pattern).
-			Count(&total)
+			Where(titlePredicate, pattern).
+			Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
 		err := r.db.Table(poemTable).
 			Select(poemTable+".*").
 			Joins(ftsJoin).
-			Where(ftsTable+".title LIKE ?", pattern).
+			Where(titlePredicate, pattern).
 			Order(poemTable + ".id").
 			Limit(pageSize).Offset(offset).
 			Find(&poems).Error
@@ -340,14 +370,16 @@ func (r *Repository) SearchPoems(query string, searchType string, page, pageSize
 
 	case "content":
 		// 仅搜正文，走 FTS trigram 索引
-		r.db.Table(poemTable).
+		if err := r.db.Table(poemTable).
 			Joins(ftsJoin).
-			Where(ftsTable+".content_text LIKE ?", pattern).
-			Count(&total)
+			Where(contentPredicate, pattern).
+			Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
 		err := r.db.Table(poemTable).
 			Select(poemTable+".*").
 			Joins(ftsJoin).
-			Where(ftsTable+".content_text LIKE ?", pattern).
+			Where(contentPredicate, pattern).
 			Order(poemTable + ".id").
 			Limit(pageSize).Offset(offset).
 			Find(&poems).Error
@@ -356,15 +388,17 @@ func (r *Repository) SearchPoems(query string, searchType string, page, pageSize
 		}
 
 	case "author":
-		// 仅搜作者名。作者表很小，普通 LIKE 足够快
-		r.db.Table(poemTable).
-			Joins("JOIN "+authorTable+" ON "+poemTable+".author_id = "+authorTable+".id").
-			Where(authorTable+".name LIKE ?", pattern).
-			Count(&total)
+		// 先在较小的作者表筛 ID，再经 poems.author_id 索引取作品；避免查询
+		// 计划从全量诗词出发、逐行回表检查作者名。
+		authorIDs := r.db.Table(authorTable).Select("id").Where(authorPredicate, pattern)
+		if err := r.db.Table(poemTable).
+			Where(poemTable+".author_id IN (?)", authorIDs).
+			Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
 		err := r.db.Table(poemTable).
 			Select(poemTable+".*").
-			Joins("JOIN "+authorTable+" ON "+poemTable+".author_id = "+authorTable+".id").
-			Where(authorTable+".name LIKE ?", pattern).
+			Where(poemTable+".author_id IN (?)", authorIDs).
 			Order(poemTable + ".id").
 			Limit(pageSize).Offset(offset).
 			Find(&poems).Error
@@ -373,19 +407,22 @@ func (r *Repository) SearchPoems(query string, searchType string, page, pageSize
 		}
 
 	default: // "all"
-		// 标题、正文（走 FTS）与作者名一并搜索
-		r.db.Table(poemTable).
-			Joins(ftsJoin).
-			Joins("LEFT JOIN "+authorTable+" ON "+poemTable+".author_id = "+authorTable+".id").
-			Where(ftsTable+".title LIKE ? OR "+ftsTable+".content_text LIKE ? OR "+authorTable+".name LIKE ?",
-				pattern, pattern, pattern).
-			Count(&total)
+		// 把三条候选路径分别求解后 UNION poem ID。这样 title/content 的
+		// LIKE 能各自使用 trigram 虚表索引，不会被跨表 OR 迫使成全表扫描。
+		matchJoin := "JOIN (" +
+			"SELECT rowid AS poem_id FROM " + ftsTable + " WHERE " + titlePredicate +
+			" UNION SELECT rowid AS poem_id FROM " + ftsTable + " WHERE " + contentPredicate +
+			" UNION SELECT " + poemTable + ".id AS poem_id FROM " + poemTable +
+			" WHERE " + poemTable + ".author_id IN (SELECT id FROM " + authorTable + " WHERE " + authorPredicate + ")" +
+			") AS search_matches ON search_matches.poem_id = " + poemTable + ".id"
+		if err := r.db.Table(poemTable).
+			Joins(matchJoin, pattern, pattern, pattern).
+			Count(&total).Error; err != nil {
+			return nil, 0, err
+		}
 		err := r.db.Table(poemTable).
 			Select(poemTable+".*").
-			Joins(ftsJoin).
-			Joins("LEFT JOIN "+authorTable+" ON "+poemTable+".author_id = "+authorTable+".id").
-			Where(ftsTable+".title LIKE ? OR "+ftsTable+".content_text LIKE ? OR "+authorTable+".name LIKE ?",
-				pattern, pattern, pattern).
+			Joins(matchJoin, pattern, pattern, pattern).
 			Order(poemTable + ".id").
 			Limit(pageSize).Offset(offset).
 			Find(&poems).Error

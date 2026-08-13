@@ -31,7 +31,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic:   "",
 			want: PoetryTypeInfo{
 				TypeName:     "五言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(5),
 			},
@@ -42,7 +42,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic:   "",
 			want: PoetryTypeInfo{
 				TypeName:     "五言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(5),
 			},
@@ -54,7 +54,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic:   "",
 			want: PoetryTypeInfo{
 				TypeName:     "七言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(7),
 			},
@@ -65,7 +65,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic:   "",
 			want: PoetryTypeInfo{
 				TypeName:     "七言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(7),
 			},
@@ -82,7 +82,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic: "",
 			want: PoetryTypeInfo{
 				TypeName:     "五言律诗",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(8),
 				CharsPerLine: intPtr(5),
 			},
@@ -93,7 +93,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic:   "",
 			want: PoetryTypeInfo{
 				TypeName:     "五言律诗",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(8),
 				CharsPerLine: intPtr(5),
 			},
@@ -114,7 +114,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic: "",
 			want: PoetryTypeInfo{
 				TypeName:     "七言律诗",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(8),
 				CharsPerLine: intPtr(7),
 			},
@@ -130,7 +130,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic: "",
 			want: PoetryTypeInfo{
 				TypeName:     "七言律诗",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(8),
 				CharsPerLine: intPtr(7),
 			},
@@ -169,7 +169,7 @@ func TestClassifyPoetryType(t *testing.T) {
 			rhythmic:   "",
 			want: PoetryTypeInfo{
 				TypeName:     "五言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(5),
 			},
@@ -505,7 +505,7 @@ func TestClassifyPoetryTypeWithDataset(t *testing.T) {
 			datasetKey: "",
 			want: PoetryTypeInfo{
 				TypeName:     "五言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(5),
 			},
@@ -517,7 +517,7 @@ func TestClassifyPoetryTypeWithDataset(t *testing.T) {
 			datasetKey: "tangsong",
 			want: PoetryTypeInfo{
 				TypeName:     "五言绝句",
-				Category:     "唐诗",
+				Category:     "诗",
 				Lines:        intPtr(4),
 				CharsPerLine: intPtr(5),
 			},

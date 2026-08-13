@@ -8,7 +8,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/palemoky/chinese-poetry-api/internal/database"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/database"
 )
 
 type DynastyStats struct {
@@ -16,8 +16,7 @@ type DynastyStats struct {
 	Count   int               `json:"count"`
 }
 
-type Query struct {
-}
+type Query struct{}
 
 type TypeStats struct {
 	Type  *database.PoetryType `json:"type"`

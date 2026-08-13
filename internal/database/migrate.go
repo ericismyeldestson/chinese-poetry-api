@@ -2,6 +2,8 @@ package database
 
 import (
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -9,7 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/palemoky/chinese-poetry-api/internal/classifier"
+	"github.com/ericismyeldestson/chinese-poetry-api/internal/classifier"
 )
 
 // DB 是对 gorm.DB 连接的封装。
@@ -21,20 +23,56 @@ type DB struct {
 // maxOpenConns：最大连接数，传 0 则取保守默认值 1。
 // maxIdleConns：最大空闲连接数，传 0 则取默认值 1。
 func Open(path string, maxOpenConns, maxIdleConns int) (*DB, error) {
+	dsn, err := sqliteFileDSN(path, false)
+	if err != nil {
+		return nil, err
+	}
+	return openDSN(dsn, maxOpenConns, maxIdleConns)
+}
+
+// OpenReadOnly opens an immutable SQLite snapshot for the API server and
+// release inspection. The public API has no write operations, so using a
+// read-only connection prevents runtime journal-mode changes from mutating a
+// checksum-verified release database or creating WAL/SHM sidecars.
+func OpenReadOnly(path string, maxOpenConns, maxIdleConns int) (*DB, error) {
+	dsn, err := sqliteFileDSN(path, true)
+	if err != nil {
+		return nil, err
+	}
+	return openDSN(dsn, maxOpenConns, maxIdleConns)
+}
+
+func sqliteFileDSN(path string, readOnly bool) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve database path: %w", err)
+	}
+	uri := &url.URL{Scheme: "file", Path: filepath.ToSlash(absolute)}
+	query := url.Values{
+		"_busy_timeout": {"5000"},
+		"_cache_size":   {"-64000"},
+		"_foreign_keys": {"on"},
+		"_temp_store":   {"MEMORY"},
+		"cache":         {"shared"},
+	}
+	if readOnly {
+		query.Set("mode", "ro")
+		query.Set("immutable", "1")
+	} else {
+		query.Set("mode", "rwc")
+		query.Set("_journal_mode", "WAL")
+		query.Set("_synchronous", "NORMAL")
+	}
+	uri.RawQuery = query.Encode()
+	return uri.String(), nil
+}
+
+func openDSN(dsn string, maxOpenConns, maxIdleConns int) (*DB, error) {
 	config := &gorm.Config{
 		Logger:      logger.Default.LogMode(logger.Silent), // 调试时可改为 logger.Info
 		NowFunc:     time.Now,
 		PrepareStmt: true, // 预编译语句以提升性能
 	}
-
-	// 针对并发写入优化的 SQLite 连接串：
-	// _busy_timeout=5000  数据库被锁时最多等待 5 秒
-	// _journal_mode=WAL   使用 WAL 日志以提升并发能力
-	// _synchronous=NORMAL 在安全性与性能之间取平衡
-	// cache=shared        多个连接共享缓存
-	// _cache_size=-64000  64MB 页缓存（负值单位为 KB，正值为页数）
-	// _temp_store=MEMORY  临时表与临时索引放在内存中
-	dsn := path + "?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&cache=shared&_cache_size=-64000&_temp_store=MEMORY"
 
 	db, err := gorm.Open(sqlite.Open(dsn), config)
 	if err != nil {
@@ -84,6 +122,31 @@ func (db *DB) Migrate() error {
 		return fmt.Errorf("failed to create metadata table: %w", err)
 	}
 
+	// Every source record rejected before product generation is retained in a
+	// language-independent ledger. This makes quality losses explicit without
+	// duplicating the same rejection in the Hans and Hant product tables.
+	if err := db.Exec(`CREATE TABLE IF NOT EXISTS source_rejections (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		locator_id TEXT NOT NULL UNIQUE,
+		source_id TEXT,
+		dataset_key TEXT NOT NULL,
+		source_path TEXT NOT NULL,
+		source_record_index INTEGER NOT NULL CHECK(source_record_index >= 0),
+		stage TEXT NOT NULL,
+		reason TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`).Error; err != nil {
+		return fmt.Errorf("failed to create source_rejections: %w", err)
+	}
+	for _, statement := range []string{
+		"CREATE INDEX IF NOT EXISTS idx_source_rejections_dataset ON source_rejections(dataset_key)",
+		"CREATE INDEX IF NOT EXISTS idx_source_rejections_reason ON source_rejections(stage, reason)",
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("failed to migrate source_rejections indexes: %w", err)
+		}
+	}
+
 	// 简繁两套表分别建表
 	for _, lang := range []Lang{LangHans, LangHant} {
 		if err := db.migrateTablesForLang(lang); err != nil {
@@ -115,6 +178,7 @@ func (db *DB) migrateTablesForLang(lang Lang) error {
 	authorTable := authorsTable(lang)
 	poetryTypeTable := poetryTypesTable(lang)
 	poemTable := poemsTable(lang)
+	poemSourceTable := poemSourcesTable(lang)
 
 	// 朝代表
 	dynastySQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -130,10 +194,24 @@ func (db *DB) migrateTablesForLang(lang Lang) error {
 	}
 
 	// 作者表
+	var existingAuthorSQL string
+	if err := db.Raw(
+		`SELECT COALESCE(sql, '') FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		authorTable,
+	).Scan(&existingAuthorSQL).Error; err != nil {
+		return fmt.Errorf("failed to inspect %s: %w", authorTable, err)
+	}
+	if existingAuthorSQL != "" && !strings.Contains(existingAuthorSQL, "canonical_id TEXT NOT NULL UNIQUE") {
+		return fmt.Errorf(
+			"%s lacks governed canonical author identity; rebuild the database for schema v%d",
+			authorTable, SchemaVersion,
+		)
+	}
 	authorSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT NOT NULL UNIQUE,
-		dynasty_id INTEGER,
+		id INTEGER PRIMARY KEY,
+		canonical_id TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL,
+		dynasty_id INTEGER NOT NULL,
 		description TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		FOREIGN KEY (dynasty_id) REFERENCES %s(id)
@@ -142,7 +220,21 @@ func (db *DB) migrateTablesForLang(lang Lang) error {
 		return fmt.Errorf("failed to create %s: %w", authorTable, err)
 	}
 	// dynasty_id 索引
-	db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_dynasty ON %s(dynasty_id)", authorTable, authorTable))
+	if err := db.Exec(fmt.Sprintf(
+		"CREATE INDEX IF NOT EXISTS idx_%s_dynasty ON %s(dynasty_id)", authorTable, authorTable,
+	)).Error; err != nil {
+		return fmt.Errorf("failed to create dynasty index for %s: %w", authorTable, err)
+	}
+	if err := db.Exec(fmt.Sprintf(
+		"CREATE INDEX IF NOT EXISTS idx_%s_name ON %s(name)", authorTable, authorTable,
+	)).Error; err != nil {
+		return fmt.Errorf("failed to create name index for %s: %w", authorTable, err)
+	}
+	if err := db.Exec(fmt.Sprintf(
+		"CREATE INDEX IF NOT EXISTS idx_%s_name_dynasty ON %s(name, dynasty_id)", authorTable, authorTable,
+	)).Error; err != nil {
+		return fmt.Errorf("failed to create composite lookup index for %s: %w", authorTable, err)
+	}
 
 	// 诗词体裁表
 	poetryTypeSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
@@ -165,6 +257,8 @@ func (db *DB) migrateTablesForLang(lang Lang) error {
 		title TEXT NOT NULL,
 		content TEXT NOT NULL,
 		content_hash TEXT,
+		canonical_id TEXT,
+		canonical_fingerprint TEXT,
 		author_id INTEGER,
 		dynasty_id INTEGER,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -175,20 +269,88 @@ func (db *DB) migrateTablesForLang(lang Lang) error {
 	if err := db.Exec(poemSQL).Error; err != nil {
 		return fmt.Errorf("failed to create %s: %w", poemTable, err)
 	}
+	// v2 introduces stable, language-independent poem identities. Existing v1
+	// databases receive nullable columns so legacy rows remain readable until the
+	// next data rebuild assigns canonical identities.
+	if err := db.addColumnIfMissing(poemTable, "canonical_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := db.addColumnIfMissing(poemTable, "canonical_fingerprint", "TEXT"); err != nil {
+		return err
+	}
 
 	// 诗词表索引
-	db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_type ON %s(type_id)", poemTable, poemTable))
-	db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_title ON %s(title)", poemTable, poemTable))
-	db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_author ON %s(author_id)", poemTable, poemTable))
-	db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_dynasty ON %s(dynasty_id)", poemTable, poemTable))
-	db.Exec(fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_unique ON %s(title, content_hash)", poemTable, poemTable))
-	// 复合索引，用于多体裁随机取词（type_id IN ... 叠加 id 范围查找）
-	db.Exec(fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_type_id ON %s(type_id, id)", poemTable, poemTable))
+	poemIndexStatements := []string{
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_type ON %s(type_id)", poemTable, poemTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_title ON %s(title)", poemTable, poemTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_author ON %s(author_id)", poemTable, poemTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_dynasty ON %s(dynasty_id)", poemTable, poemTable),
+		// v1 used (title, content_hash) as identity. It silently collapsed records
+		// from different authors or source files, so v2 removes that constraint.
+		fmt.Sprintf("DROP INDEX IF EXISTS idx_%s_unique", poemTable),
+		// SQLite permits multiple NULL values in a UNIQUE index. That lets migrated
+		// legacy rows coexist while all newly generated rows use stable IDs.
+		fmt.Sprintf("CREATE UNIQUE INDEX IF NOT EXISTS idx_%s_canonical_id ON %s(canonical_id)", poemTable, poemTable),
+		// 复合索引，用于多体裁随机取词（type_id IN ... 叠加 id 范围查找）
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_type_id ON %s(type_id, id)", poemTable, poemTable),
+	}
+	for _, statement := range poemIndexStatements {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("failed to migrate indexes for %s: %w", poemTable, err)
+		}
+	}
+
+	// Keep row-level source provenance separate from the API-facing poem row. A
+	// poem may legitimately occur in more than one upstream file; locator_id is
+	// the immutable identity of that source occurrence.
+	poemSourceSQL := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		poem_id INTEGER NOT NULL,
+		locator_id TEXT NOT NULL UNIQUE,
+		source_id TEXT,
+		dataset_key TEXT NOT NULL,
+		source_path TEXT NOT NULL,
+		source_record_index INTEGER NOT NULL CHECK(source_record_index >= 0),
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (poem_id) REFERENCES %s(id) ON DELETE CASCADE
+	)`, poemSourceTable, poemTable)
+	if err := db.Exec(poemSourceSQL).Error; err != nil {
+		return fmt.Errorf("failed to create %s: %w", poemSourceTable, err)
+	}
+	for _, statement := range []string{
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_poem ON %s(poem_id)", poemSourceTable, poemSourceTable),
+		fmt.Sprintf("CREATE INDEX IF NOT EXISTS idx_%s_dataset ON %s(dataset_key)", poemSourceTable, poemSourceTable),
+	} {
+		if err := db.Exec(statement).Error; err != nil {
+			return fmt.Errorf("failed to migrate indexes for %s: %w", poemSourceTable, err)
+		}
+	}
 
 	if err := db.migrateFtsForLang(lang); err != nil {
 		return err
 	}
 
+	return nil
+}
+
+// addColumnIfMissing performs an idempotent SQLite column migration. The table
+// and column names passed here come exclusively from the Lang mapping and fixed
+// migration constants, not from user input.
+func (db *DB) addColumnIfMissing(table, column, definition string) error {
+	var columns []struct {
+		Name string `gorm:"column:name"`
+	}
+	if err := db.Raw(fmt.Sprintf("PRAGMA table_info(%s)", table)).Scan(&columns).Error; err != nil {
+		return fmt.Errorf("failed to inspect %s: %w", table, err)
+	}
+	for _, existing := range columns {
+		if existing.Name == column {
+			return nil
+		}
+	}
+	if err := db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition)).Error; err != nil {
+		return fmt.Errorf("failed to add %s.%s: %w", table, column, err)
+	}
 	return nil
 }
 
@@ -204,8 +366,8 @@ func (db *DB) migrateTablesForLang(lang Lang) error {
 //
 // 分词器选用 trigram 而非默认的 unicode61：中文没有空格作词边界，
 // 标准分词器无法有效切分。trigram 索引让 `col LIKE '%...%'` 这类任意子串查询
-// 也能走 FTS 索引加速（含单字、双字中文词），同时完全保持 SearchPoems
-// 对外暴露的子串匹配语义。
+// 也能让至少 3 个 Unicode 字符的 LIKE 模式使用索引。单字/双字模式不能利用
+// trigram 索引，因此 API 层会拒绝对应的 title/content/all 搜索。
 func (db *DB) migrateFtsForLang(lang Lang) error {
 	poemTable := poemsTable(lang)
 	ftsTable := poemsFtsTable(lang)

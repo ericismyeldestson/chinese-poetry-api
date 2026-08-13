@@ -129,6 +129,34 @@ func TestGetOrCreateAuthor(t *testing.T) {
 	}
 }
 
+func TestAuthorIdentityIncludesDynasty(t *testing.T) {
+	db := setupTestDB(t)
+	repo := NewRepository(db)
+	cached := NewCachedRepository(repo)
+
+	tangID, err := cached.GetOrCreateDynasty("唐")
+	require.NoError(t, err)
+	songID, err := cached.GetOrCreateDynasty("宋")
+	require.NoError(t, err)
+
+	tangAuthorID, err := cached.GetOrCreateAuthor("张说", tangID)
+	require.NoError(t, err)
+	songAuthorID, err := cached.GetOrCreateAuthor("张说", songID)
+	require.NoError(t, err)
+	assert.NotEqual(t, tangAuthorID, songAuthorID)
+
+	tangAgain, err := cached.GetOrCreateAuthor("张说", tangID)
+	require.NoError(t, err)
+	assert.Equal(t, tangAuthorID, tangAgain)
+	assert.Equal(t, 2, cached.GetCacheStats()["authors"])
+
+	_, err = repo.GetAuthorByName("张说")
+	require.ErrorIs(t, err, ErrAmbiguousAuthor)
+	resolved, err := repo.GetAuthorByNameAndDynasty("张说", &songID)
+	require.NoError(t, err)
+	assert.Equal(t, songAuthorID, resolved.ID)
+}
+
 func TestGetPoetryTypeID(t *testing.T) {
 	db := setupTestDB(t)
 	repo := NewRepository(db)
