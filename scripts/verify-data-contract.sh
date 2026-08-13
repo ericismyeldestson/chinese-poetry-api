@@ -72,8 +72,13 @@ printf '%s\n' "$source_commit" | grep -Eq '^[0-9a-f]{40}$' || die "source commit
 [ "$source_license" = "MIT" ] || die "unexpected data source license"
 [ "$pipeline_repository" = "https://github.com/ericismyeldestson/chinese-poetry-api.git" ] || die "unexpected pipeline repository"
 [ "$schema_version" = "2" ] || die "this release pipeline requires schema version 2"
-[ "$expected_poems" -ge 1 ] && [ "$expected_witnesses" -ge "$expected_poems" ] &&
-    [ "$minimum_authors" -ge 1 ] || die "invalid quality thresholds"
+if ! {
+    [ "$expected_poems" -ge 1 ] &&
+        [ "$expected_witnesses" -ge "$expected_poems" ] &&
+        [ "$minimum_authors" -ge 1 ]
+}; then
+    die "invalid quality thresholds"
+fi
 [ "$integrity_check" = "quick_check" ] || die "unsupported integrity check: $integrity_check"
 printf '%s\n' "$expected_file_decisions_sha256" | grep -Eq '^[0-9a-f]{64}$' ||
     die "source file-decision digest must be SHA-256"
@@ -327,8 +332,9 @@ if [ -n "$database" ]; then
         'SELECT count(*) FROM (SELECT canonical_id FROM poems_zh_hans EXCEPT SELECT canonical_id FROM poems_zh_hant);')
     hant_only=$(sqlite3 "$database_uri" \
         'SELECT count(*) FROM (SELECT canonical_id FROM poems_zh_hant EXCEPT SELECT canonical_id FROM poems_zh_hans);')
-    [ "$hans_only" = "0" ] && [ "$hant_only" = "0" ] ||
+    if [ "$hans_only" != "0" ] || [ "$hant_only" != "0" ]; then
         die "simplified/traditional canonical identity sets differ (Hans-only=$hans_only, Hant-only=$hant_only)"
+    fi
 
     cross_language_identity_mismatch=$(sqlite3 "$database_uri" \
 		'SELECT count(*) FROM poems_zh_hans h JOIN poems_zh_hant t USING(canonical_id) WHERE h.id != t.id OR h.canonical_fingerprint != t.canonical_fingerprint OR h.author_id IS NOT t.author_id OR h.dynasty_id IS NOT t.dynasty_id OR h.type_id IS NOT t.type_id;')
@@ -339,8 +345,9 @@ if [ -n "$database" ]; then
 		'SELECT count(*) FROM (SELECT canonical_id FROM authors_zh_hans EXCEPT SELECT canonical_id FROM authors_zh_hant);')
 	hant_author_only=$(sqlite3 "$database_uri" \
 		'SELECT count(*) FROM (SELECT canonical_id FROM authors_zh_hant EXCEPT SELECT canonical_id FROM authors_zh_hans);')
-	[ "$hans_author_only" = "0" ] && [ "$hant_author_only" = "0" ] ||
+	if [ "$hans_author_only" != "0" ] || [ "$hant_author_only" != "0" ]; then
 		die "simplified/traditional canonical author sets differ"
+	fi
 	cross_language_author_mismatch=$(sqlite3 "$database_uri" \
 		'SELECT count(*) FROM authors_zh_hans h JOIN authors_zh_hant t USING(canonical_id) WHERE h.id != t.id OR h.dynasty_id IS NOT t.dynasty_id;')
 	[ "$cross_language_author_mismatch" = "0" ] ||
@@ -354,8 +361,9 @@ if [ -n "$database" ]; then
         'SELECT count(*) FROM (SELECT locator_id FROM poem_sources_zh_hans EXCEPT SELECT locator_id FROM poem_sources_zh_hant);')
     hant_source_only=$(sqlite3 "$database_uri" \
         'SELECT count(*) FROM (SELECT locator_id FROM poem_sources_zh_hant EXCEPT SELECT locator_id FROM poem_sources_zh_hans);')
-    [ "$hans_source_only" = "0" ] && [ "$hant_source_only" = "0" ] ||
+    if [ "$hans_source_only" != "0" ] || [ "$hant_source_only" != "0" ]; then
         die "simplified/traditional source locator sets differ (Hans-only=$hans_source_only, Hant-only=$hant_source_only)"
+    fi
 
     cross_language_locator_mismatch=$(sqlite3 "$database_uri" \
         'SELECT count(*) FROM poem_sources_zh_hans hs JOIN poem_sources_zh_hant ts USING(locator_id) JOIN poems_zh_hans hp ON hp.id=hs.poem_id JOIN poems_zh_hant tp ON tp.id=ts.poem_id WHERE hp.canonical_id != tp.canonical_id OR hs.source_id IS NOT ts.source_id OR hs.dataset_key != ts.dataset_key OR hs.source_path != ts.source_path OR hs.source_record_index != ts.source_record_index;')

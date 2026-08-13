@@ -172,10 +172,10 @@ validate_database() {
     for language in zh_hans zh_hant; do
         poems=$(sqlite_read "$candidate" "SELECT EXISTS(SELECT 1 FROM poems_${language} LIMIT 1);") || return 1
         authors=$(sqlite_read "$candidate" "SELECT EXISTS(SELECT 1 FROM authors_${language} LIMIT 1);") || return 1
-        [ "$poems" = "1" ] && [ "$authors" = "1" ] || {
+        if [ "$poems" != "1" ] || [ "$authors" != "1" ]; then
             fail "database has no usable poetry data for $language"
             return 1
-        }
+        fi
         author_identity_column=$(sqlite_read "$candidate" \
             "SELECT count(*) FROM pragma_table_info('authors_${language}') WHERE name='canonical_id' AND \"notnull\"=1;") || return 1
         [ "$author_identity_column" = "1" ] || {

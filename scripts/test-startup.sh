@@ -374,8 +374,9 @@ run_startup "$installed" "${tmp_root}/offline" >"$offline_log" 2>&1 ||
     fail "verified local fallback failed while offline"
 grep -Fq 'continuing with verified local database' "$offline_log" ||
     fail "offline fallback was not reported"
-[ ! -e "${installed}/poetry.db-wal" ] && [ ! -e "${installed}/poetry.db-shm" ] ||
+if [ -e "${installed}/poetry.db-wal" ] || [ -e "${installed}/poetry.db-shm" ]; then
     fail "immutable local validation created SQLite WAL sidecars"
+fi
 
 # A downloadable archive with a false checksum must never replace the verified
 # local database or its last-known-good checksum manifest.
@@ -437,10 +438,11 @@ grep -Fq 'Recovered the last verified database' "${tmp_root}/recovery.log" ||
 	fail "interrupted update recovery was not reported"
 [ "$(sha256_file "${interrupted_install}/poetry.db")" = "$original_database_hash" ] ||
 	fail "interrupted update did not restore the LKG database"
-[ ! -e "${interrupted_install}/.poetry.db.lkg" ] &&
-	[ ! -e "${interrupted_install}/.checksums.txt.lkg" ] &&
-	[ ! -e "${interrupted_install}/.poetry.db.installing" ] ||
+if [ -e "${interrupted_install}/.poetry.db.lkg" ] ||
+	[ -e "${interrupted_install}/.checksums.txt.lkg" ] ||
+	[ -e "${interrupted_install}/.poetry.db.installing" ]; then
 	fail "interrupted update left stale recovery backups"
+fi
 
 # If recovery itself is interrupted after only the database has been restored,
 # the marker and unconsumed LKG pair must let a later startup finish safely.
@@ -486,8 +488,9 @@ if run_startup "$tampered_install" "${tmp_root}/offline" >"${tmp_root}/tampered.
 fi
 grep -Fq 'not bound to its release checksum' "${tmp_root}/tampered.log" ||
 	fail "checksum binding failure was not reported"
-[ ! -e "${tampered_install}/poetry.db-wal" ] && [ ! -e "${tampered_install}/poetry.db-shm" ] ||
+if [ -e "${tampered_install}/poetry.db-wal" ] || [ -e "${tampered_install}/poetry.db-shm" ]; then
 	fail "immutable validation created SQLite WAL sidecars"
+fi
 
 # A schema-v1 archive in a fresh directory has no safe fallback and must fail
 # closed without publishing a partial database.
