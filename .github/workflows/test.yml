@@ -73,18 +73,217 @@ jobs:
       - name: Run atomic startup regression scenarios
         run: sh scripts/test-startup.sh
       - name: Lint release shell scripts
-        run: shellcheck scripts/startup.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/test-startup.sh
+        run: shellcheck scripts/startup.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/test-startup.sh
       - name: Validate Compose model
         run: docker compose config --quiet
 
-  container-build:
+  full-data-preflight:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.actor == github.repository_owner)
+    needs:
+      - test
+      - vulnerability-scan
+      - data-quality-contract
+      - container-preflight
+      - license-contract
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact pipeline and pinned poetry source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.25.12
+          cache: true
+      - name: Verify the pinned source contract
+        run: sh scripts/verify-data-contract.sh --contract-only
+      - name: Build the release processor
+        env:
+          CGO_ENABLED: 1
+        run: go build -tags sqlite_fts5 -trimpath -o processor ./cmd/processor
+      - name: Rebuild and verify the complete corpus twice
+        run: |
+          set -euo pipefail
+          available_kib=$(df -Pk . | awk 'NR == 2 { print $4 }')
+          ((available_kib >= 10 * 1024 * 1024)) || {
+            echo "Full data preflight requires at least 10 GiB of free disk" >&2
+            exit 1
+          }
+          work_dir=$(mktemp -d "${RUNNER_TEMP}/full-data-preflight.XXXXXX")
+          trap 'rm -rf -- "$work_dir"' EXIT HUP INT TERM
+          ./processor --input poetry-data --output "$work_dir/poetry-a.db"
+          sh scripts/verify-data-contract.sh \
+            --database "$work_dir/poetry-a.db" \
+            --source-report "$work_dir/poetry-a.db.source-report.json"
+          ./processor --input poetry-data --output "$work_dir/poetry-b.db"
+          sh scripts/verify-data-contract.sh \
+            --database "$work_dir/poetry-b.db" \
+            --source-report "$work_dir/poetry-b.db.source-report.json"
+          cmp "$work_dir/poetry-a.db" "$work_dir/poetry-b.db"
+          cmp "$work_dir/poetry-a.db.source-report.json" \
+            "$work_dir/poetry-b.db.source-report.json"
+          expected_database_sha=$(jq -er \
+            '.quality_contract.expected_database_sha256' \
+            data/source-manifest.json)
+          database_sha=$(sha256sum "$work_dir/poetry-a.db" | awk '{ print $1 }')
+          second_database_sha=$(sha256sum "$work_dir/poetry-b.db" | awk '{ print $1 }')
+          report_sha=$(sha256sum "$work_dir/poetry-a.db.source-report.json" | awk '{ print $1 }')
+          [[ $database_sha == "$expected_database_sha" && \
+             $second_database_sha == "$expected_database_sha" ]] || {
+            echo "Full data builds differ from the reviewed database digest" >&2
+            exit 1
+          }
+          {
+            echo "### Full data preflight"
+            echo
+            echo "- Database SHA-256: \`$database_sha\`"
+            echo "- Source report SHA-256: \`$report_sha\`"
+            echo "- Two complete builds matched byte for byte."
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  container-preflight:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - name: Build the runtime image
-        run: docker build --build-arg VCS_REF="${{ github.sha }}" --tag chinese-poetry-api:ci .
+      - uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - name: Record the container builder versions
+        run: |
+          docker buildx version
+          docker buildx inspect --bootstrap
+      - name: Build both release platforms with native attestations
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          build-args: |
+            VCS_REF=${{ github.sha }}
+          outputs: type=oci,dest=${{ runner.temp }}/chinese-poetry-api.oci.tar
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=container-preflight
+          cache-to: type=gha,scope=container-preflight,mode=max
+      - name: Verify both platforms, SPDX SBOMs, and SLSA provenance
+        run: |
+          scripts/verify-oci-image.sh \
+            "${RUNNER_TEMP}/chinese-poetry-api.oci.tar" \
+            "${GITHUB_SHA}" \
+            "${RUNNER_TEMP}/container-evidence"
+      - name: Retain compact container evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: container-preflight-${{ github.sha }}
+          path: ${{ runner.temp }}/container-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
+  ghcr-write-probe:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Start and cancel an authenticated GHCR blob upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+          IMAGE_NAME: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          work_dir=$(mktemp -d)
+          upload_url=
+          registry_token=
+          cleanup() {
+            if [[ -n "$upload_url" && -n "$registry_token" ]]; then
+              curl --silent --show-error --request DELETE \
+                --header "Authorization: Bearer ${registry_token}" \
+                --header 'Content-Length: 0' \
+                "$upload_url" >/dev/null || true
+            fi
+            rm -rf -- "$work_dir"
+          }
+          trap cleanup EXIT HUP INT TERM
+
+          token_code=$(curl --silent --show-error \
+            --output "$work_dir/token.json" --write-out '%{http_code}' \
+            --user "${REGISTRY_USER}:${GH_TOKEN}" --get \
+            --data-urlencode service=ghcr.io \
+            --data-urlencode "scope=repository:${IMAGE_NAME}:pull,push" \
+            https://ghcr.io/token)
+          [[ $token_code == 200 ]] || {
+            echo "GHCR token exchange failed: HTTP ${token_code}" >&2
+            exit 1
+          }
+          registry_token=$(jq -er '(.token // .access_token) | select(length > 0)' \
+            "$work_dir/token.json")
+
+          start_code=$(curl --silent --show-error \
+            --dump-header "$work_dir/start.headers" \
+            --output "$work_dir/start.body" --write-out '%{http_code}' \
+            --request POST --header "Authorization: Bearer ${registry_token}" \
+            --header 'Content-Length: 0' \
+            "https://ghcr.io/v2/${IMAGE_NAME}/blobs/uploads/")
+          [[ $start_code == 202 ]] || {
+            cat "$work_dir/start.body" >&2
+            exit 1
+          }
+          location=$(awk '
+            tolower($1) == "location:" {
+              sub(/\r$/, "", $2)
+              print $2
+              exit
+            }
+          ' "$work_dir/start.headers")
+          case "$location" in
+            /v2/"${IMAGE_NAME}"/blobs/uploads/*)
+              upload_url="https://ghcr.io${location}"
+              ;;
+            https://ghcr.io/v2/"${IMAGE_NAME}"/blobs/uploads/*)
+              upload_url=$location
+              ;;
+            *)
+              echo "GHCR returned an unsafe upload Location" >&2
+              exit 1
+              ;;
+          esac
+
+          cancel_code=$(curl --silent --show-error \
+            --output "$work_dir/cancel.body" --write-out '%{http_code}' \
+            --request DELETE --header "Authorization: Bearer ${registry_token}" \
+            --header 'Content-Length: 0' \
+            "$upload_url")
+          [[ $cancel_code == 204 ]] || {
+            cat "$work_dir/cancel.body" >&2
+            exit 1
+          }
+          after_code=$(curl --silent --show-error \
+            --output "$work_dir/after.body" --write-out '%{http_code}' \
+            --header "Authorization: Bearer ${registry_token}" "$upload_url")
+          [[ $after_code == 404 ]] || {
+            echo "Canceled GHCR upload is still addressable: HTTP ${after_code}" >&2
+            cat "$work_dir/after.body" >&2
+            exit 1
+          }
+          upload_url=
+          echo "GHCR accepted and canceled an authenticated upload session; no blob or manifest was committed"
 
   license-contract:
     runs-on: ubuntu-latest
