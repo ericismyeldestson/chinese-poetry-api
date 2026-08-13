@@ -198,7 +198,7 @@ for arch in amd64 arm64; do
         die "linux/$arch attestation descriptors are malformed"
 
     jq -e '
-        .config.mediaType == "application/vnd.oci.image.config.v1+json" and
+        (.config.mediaType | type) == "string" and
         (.config.digest | type) == "string" and
         (.config.size | type) == "number" and
         .config.size > 0
@@ -208,16 +208,44 @@ for arch in amd64 arm64; do
     attestation_config_size=$(jq -er '.config.size' "$attestation_manifest")
     verify_descriptor "$attestation_config_digest" "$attestation_config_size"
     attestation_config=$(blob_path "$attestation_config_digest")
-    expected_attestation_diff_ids=$(jq -c '[.layers[].digest]' "$attestation_manifest")
-    jq -e --argjson expected_diff_ids "$expected_attestation_diff_ids" '
-        .architecture == "unknown" and
-        .os == "unknown" and
-        .config == {} and
-        .rootfs.type == "layers" and
-        (.rootfs.diff_ids | type) == "array" and
-        .rootfs.diff_ids == $expected_diff_ids
-    ' "$attestation_config" >/dev/null ||
-        die "linux/$arch attestation config does not bind its predicate layers"
+    attestation_config_media_type=$(jq -er '.config.mediaType' "$attestation_manifest")
+    case $attestation_config_media_type in
+        application/vnd.oci.image.config.v1+json)
+            expected_attestation_diff_ids=$(jq -c '[.layers[].digest]' "$attestation_manifest")
+            jq -e --argjson expected_diff_ids "$expected_attestation_diff_ids" '
+                .architecture == "unknown" and
+                .os == "unknown" and
+                .config == {} and
+                .rootfs.type == "layers" and
+                (.rootfs.diff_ids | type) == "array" and
+                .rootfs.diff_ids == $expected_diff_ids
+            ' "$attestation_config" >/dev/null ||
+                die "linux/$arch attestation config does not bind its predicate layers"
+            ;;
+        application/vnd.oci.empty.v1+json)
+            jq -e --arg image "$image_digest" --arg arch "$arch" \
+                --argjson image_size "$image_size" '
+                .artifactType == "application/vnd.docker.attestation.manifest.v1+json" and
+                .config.mediaType == "application/vnd.oci.empty.v1+json" and
+                .config.digest ==
+                    "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" and
+                .config.size == 2 and
+                (((.config | has("data")) == false) or .config.data == "e30=") and
+                .subject.mediaType == "application/vnd.oci.image.manifest.v1+json" and
+                .subject.digest == $image and
+                .subject.size == $image_size and
+                (((.subject | has("platform")) == false) or
+                    .subject.platform == {os: "linux", architecture: $arch})
+            ' "$attestation_manifest" >/dev/null ||
+                die "linux/$arch OCI artifact attestation is not bound to its image manifest"
+            [[ $(wc -c <"$attestation_config" | tr -d '[:space:]') == 2 ]] &&
+                [[ $(<"$attestation_config") == "{}" ]] ||
+                die "linux/$arch OCI artifact attestation config is not the canonical empty object"
+            ;;
+        *)
+            die "linux/$arch attestation config media type is unsupported: $attestation_config_media_type"
+            ;;
+    esac
 
     for predicate_type in https://spdx.dev/Document https://slsa.dev/provenance/v1; do
         predicate_descriptors=()
@@ -289,6 +317,8 @@ for arch in amd64 arm64; do
     [[ -z $evidence_dir ]] || cp "$image_manifest" "$evidence_dir/image-manifest-$arch.json"
     [[ -z $evidence_dir ]] ||
         cp "$attestation_manifest" "$evidence_dir/attestation-manifest-$arch.json"
+    [[ -z $evidence_dir ]] ||
+        cp "$attestation_config" "$evidence_dir/attestation-config-$arch.json"
     echo "verified linux/$arch image=$image_digest attestation=$attestation_digest"
 done
 
