@@ -27,5 +27,5 @@ update the provenance manifest when the source revision changes, and include a
 quality regression test. Do not silently delete conflicting textual witnesses
 or author attributions.
 
-Contributions to the covered program are provided under GPL-3.0. Report
+Contributions to the covered program are provided under GPL-3.0-only. Report
 security vulnerabilities using SECURITY.md rather than a public issue.

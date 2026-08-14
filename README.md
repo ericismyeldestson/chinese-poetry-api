@@ -30,20 +30,21 @@
 
 ### 使用 Docker（推荐）
 
-独立版指定 **v1.1.0** 为第一个实际稳定发布目标。公开的 annotated
+独立版 **v1.1.0** 是第一个实际稳定数据与镜像发布。公开的 annotated
 `v1.0.0` 候选标签仍指向 `7e0fc7d1b59ab1488a0e532017fdc2271a49e37f`，并保留为
 审计记录：其 [Release Data run 31760804843](https://github.com/ericismyeldestson/chinese-poetry-api/actions/runs/31760804843)
 在创建任何发布物之前被 Go 1.25.12 标准库的可达漏洞门阻止，没有生成 Actions
-artifact、GitHub Release、数据库资产或 GHCR 镜像。只有远端 `v1.1.0` Release、
-镜像及其证明材料实际存在并通过校验后，下面的命令才代表可用的正式发行；本地
-构建成功不能替代这层证据。
+artifact、GitHub Release、数据库资产或 GHCR 镜像。`v1.1.0` 的不可变数据
+Release 与镜像已经发布；后验校验发现其镜像的自动 OCI 标签把精确的
+`GPL-3.0-only` 写成了已弃用别名 `GPL-3.0`。`v1.1.1` 只纠正镜像元数据并继续
+绑定、校验 `v1.1.0` 的同一份数据资产，不重发数据库。
 
 ```bash
 docker run -d --read-only --cap-drop ALL \
   --security-opt no-new-privileges \
   -p 127.0.0.1:1279:1279 \
   -v poetry-data:/app/data \
-  ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.0
+  ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.1
 ```
 
 完整配置参见 [docker-compose.yml](docker-compose.yml)。Compose 同时保留了
@@ -226,7 +227,8 @@ query {
 来源 witness。当前审定的 SQLite 资产为 1,883,009,024 bytes；发布门禁必须在
 Linux 从零完整构建两次，要求两份数据库及来源报告逐字节一致，并分别通过
 完整契约、SQLite quick check 和外键检查。`v1.0.0` 仅是上述发布前门禁失败的
-候选标签；首个实际正式数据与镜像发布目标为 `v1.1.0`。
+候选标签；首个实际正式数据与镜像发布为 `v1.1.0`，严格 OCI 许可证标签从
+镜像补丁 `v1.1.1` 起固定为 `GPL-3.0-only`。
 canonical v2 先把身份字段转换为固定简体
 形态，再做分类、标题选择和作品合并。有意更换源 revision、转换器或身份算法时，
 必须审核并更新 contract，并再次完成双重建哈希门禁。运行时统计以 API `/stats`

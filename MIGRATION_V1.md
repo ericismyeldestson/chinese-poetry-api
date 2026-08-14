@@ -1,10 +1,11 @@
-# 从继承版 0.6.x 迁移到独立版 1.1.0
+# 从继承版 0.6.x 迁移到独立版 1.1.x
 
-独立版第一次实际稳定发布目标为 **v1.1.0**，不延续上游 0.6.x 的版本号。原因是
+独立版第一次实际稳定数据与镜像发布为 **v1.1.0**，不延续上游 0.6.x 的版本号。原因是
 数据身份、数据库 schema、查询边界和发布 namespace 都发生了破坏性变化。
 `v1.0.0` 候选标签在创建发布物之前被可达漏洞门阻止并保留作为审计记录；它没有
-对应的 GitHub Release、数据库资产或 GHCR 镜像。远端可用性必须以 `v1.1.0`
-Release、镜像和证明材料实际存在且校验通过为准。
+对应的 GitHub Release、数据库资产或 GHCR 镜像。`v1.1.0` 已发布不可变数据
+Release；镜像补丁 `v1.1.1` 修正发布自动标签对 `GPL-3.0-only` 的覆盖，并继续
+使用、校验这份 `v1.1.0` 数据。
 
 ## 数据库必须重建或重新下载
 
@@ -44,9 +45,9 @@ schema v2 在数据库内部新增跨简繁一致的 `canonical_id`，并为每�
 任何截断 ID 碰撞或同一 canonical 下的成品字段分歧都会使 release 构建失败，而
 不会静默合并或任选一条来源。
 
-独立版尚未对外发布过 schema v2 数据资产。开发期间曾生成的不含 canonical author
-约束的 v2 预览库不属于兼容契约；migration、startup 和 release verifier 都会明确
-拒绝它，必须用当前固定源与流水线重建。
+独立版已随 `v1.1.0` 对外发布 schema v2 数据资产。开发期间曾生成的不含
+canonical author 约束的 v2 预览库不属于兼容契约；migration、startup 和 release
+verifier 都会明确拒绝它，必须改用已发布资产或用当前固定源与流水线重建。
 
 ## 体裁大类变化
 
@@ -65,8 +66,10 @@ schema v2 在数据库内部新增跨简繁一致的 `canonical_id`，并为每�
 
 ## 镜像与数据 namespace
 
-- 容器镜像迁移到 `ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.0`。
+- 容器镜像迁移到 `ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.1`。
 - 数据资产迁移到本仓库 `v1.1.0` release；startup 默认不会下载上游 release。
+- `v1.1.1` 是只含镜像修正的 patch tag，仍绑定 `v1.1.0` 数据 release；不会复制
+  或重建一套同内容的 patch 数据资产。
 - 镜像 tag、数据 release、schema 和 release manifest 必须成套核对。不要使用
   可变 `latest` 作为部署依据。
 

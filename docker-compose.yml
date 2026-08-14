@@ -1,6 +1,6 @@
 services:
   poetry-api:
-    image: ghcr.io/ericismyeldestson/chinese-poetry-api:${IMAGE_VERSION:-1.1.0}
+    image: ghcr.io/ericismyeldestson/chinese-poetry-api:${IMAGE_VERSION:-1.1.1}
     build:
       context: .
     container_name: poetry-api
