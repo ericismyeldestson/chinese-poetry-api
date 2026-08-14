@@ -69,7 +69,7 @@ help:
 	@echo "  make info               - 显示系统信息"
 	@echo ""
 	@echo "$(GREEN)发布命令:$(NC)"
-	@echo "  make release v1.0.0     - 创建并推送版本标签"
+	@echo "  make release            - 交互创建并推送版本标签"
 
 ## info: 显示系统信息
 info:
@@ -327,7 +327,7 @@ release:  ## Create and push version tag
 	fi; \
 	if ! echo "$$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$$'; then \
 		echo "$(RED)Error: Invalid version format '$$VERSION'$(NC)"; \
-		echo "$(YELLOW)Expected format: v1.0.0$(NC)"; \
+		echo "$(YELLOW)Expected format: v1.2.3$(NC)"; \
 		exit 1; \
 	fi; \
 	if git tag | grep -q "^$$VERSION$$"; then \

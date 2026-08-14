@@ -1,16 +1,17 @@
-# 从继承版 0.6.x 迁移到独立版 1.0.0
+# 从继承版 0.6.x 迁移到独立版 1.1.0
 
-独立版第一次稳定发布使用 **v1.0.0**，不延续上游 0.6.x 的版本号。原因是
+独立版第一次实际稳定发布目标为 **v1.1.0**，不延续上游 0.6.x 的版本号。原因是
 数据身份、数据库 schema、查询边界和发布 namespace 都发生了破坏性变化。
-当前文档描述的是候选迁移契约；在 GitHub release 与 GHCR 包实际发布前，
-`v1.0.0` / `1.0.0` 仍不可作为远端可用性证明。
+`v1.0.0` 候选标签在创建发布物之前被可达漏洞门阻止并保留作为审计记录；它没有
+对应的 GitHub Release、数据库资产或 GHCR 镜像。远端可用性必须以 `v1.1.0`
+Release、镜像和证明材料实际存在且校验通过为准。
 
 ## 数据库必须重建或重新下载
 
-- 0.6.x 的 `poetry.db` 使用 schema v1；v1.0.0 startup 只接受 schema v2。
+- 0.6.x 的 `poetry.db` 使用 schema v1；独立版 v1 startup 只接受 schema v2。
 - startup 不做静默原地升级。旧库会验证失败；没有有效 schema-v2 fallback 时，
   服务拒绝启动。
-- 升级前先备份旧数据卷。正式发布后，可以让 startup 下载并校验 v1.0.0
+- 升级前先备份旧数据卷。正式发布后，可以让 startup 下载并校验 v1.1.0
   数据资产，或者从仓库固定的数据 submodule commit 完整运行 processor，再执行：
 
   ```bash
@@ -25,7 +26,7 @@
 ## 数字 ID 不兼容
 
 所有 poem 数字 ID 会在 v2 全量重建时重新分配。项目不提供 0.6.x ID 到
-1.0.0 ID 的映射，因为旧 ID 来自不稳定的加载/去重顺序，无法作为可靠的作品
+v1 稳定 ID 的映射，因为旧 ID 来自不稳定的加载/去重顺序，无法作为可靠的作品
 身份。依赖方必须重新抓取 v1 数据，并用自身审核过的业务键重建外部关联；不得
 假设相同数字仍指向同一首作品。
 
@@ -64,8 +65,8 @@ schema v2 在数据库内部新增跨简繁一致的 `canonical_id`，并为每�
 
 ## 镜像与数据 namespace
 
-- 容器镜像迁移到 `ghcr.io/ericismyeldestson/chinese-poetry-api:1.0.0`。
-- 数据资产迁移到本仓库 `v1.0.0` release；startup 默认不会下载上游 release。
+- 容器镜像迁移到 `ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.0`。
+- 数据资产迁移到本仓库 `v1.1.0` release；startup 默认不会下载上游 release。
 - 镜像 tag、数据 release、schema 和 release manifest 必须成套核对。不要使用
   可变 `latest` 作为部署依据。
 

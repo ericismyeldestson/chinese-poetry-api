@@ -1,5 +1,5 @@
 # Build stage. Both images are pinned by tag and digest for reproducible builds.
-FROM golang:1.25.12-alpine3.23@sha256:cc985ef6f9c3bf9ece7488129c9abe0a150388ccdfa428d886fc709dca0b230a AS builder
+FROM golang:1.25.13-alpine3.23@sha256:4ce6af6747b07e99ca3a57eadb77565787390a41b0039dcc8e09ec4c57cfa125 AS builder
 
 ARG VCS_REF=unknown
 
@@ -74,7 +74,7 @@ ENV PORT=1279 \
     RATE_LIMIT_ENABLED=true \
     RATE_LIMIT_RPS=10 \
     RATE_LIMIT_BURST=20 \
-    DATA_RELEASE_VERSION=v1.0.0
+    DATA_RELEASE_VERSION=v1.1.0
 
 EXPOSE 1279
 
