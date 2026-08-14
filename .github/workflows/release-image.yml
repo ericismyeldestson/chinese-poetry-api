@@ -23,7 +23,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 concurrency:
-  group: release-image-${{ inputs.release_sha || github.sha }}
+  group: release-image-publication
   cancel-in-progress: false
 
 jobs:
