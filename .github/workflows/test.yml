@@ -73,7 +73,7 @@ jobs:
       - name: Run atomic startup regression scenarios
         run: sh scripts/test-startup.sh
       - name: Lint release shell scripts
-        run: shellcheck scripts/startup.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/test-startup.sh
+        run: shellcheck scripts/startup.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
       - name: Validate Compose model
         run: docker compose config --quiet
 

@@ -22,6 +22,10 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+concurrency:
+  group: release-image-${{ inputs.release_sha || github.sha }}
+  cancel-in-progress: false
+
 jobs:
   verify:
     if: inputs.release_tag != '' || !endsWith(github.ref_name, '.0')
@@ -123,23 +127,58 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
-      - name: Refuse to overwrite any published image tag
+      - name: Resolve recoverable publication state
+        id: publication
         env:
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
         run: |
+          set -Eeuo pipefail
           VERSION=${RELEASE_TAG#v}
-          for tag in "$RELEASE_TAG" "$VERSION" "sha-${RELEASE_SHA}"; do
-            if docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:${tag}" >/dev/null 2>inspect-error; then
-              echo "Image tag already exists and will not be overwritten: ${tag}" >&2
-              exit 1
+          IMAGE=${REGISTRY}/${IMAGE_NAME}
+          ANCHOR_TAG=sha-${RELEASE_SHA}
+
+          inspect_tag() {
+            local tag=$1
+            if docker buildx imagetools inspect "${IMAGE}:${tag}" \
+              --format '{{json .Manifest}}' \
+              > inspected-manifest.json 2> inspected-manifest.error; then
+              return 0
             fi
-            grep -Eqi 'not found|manifest unknown|no such manifest' inspect-error || {
-              echo "Could not prove image tag ${tag} is unused:" >&2
-              cat inspect-error >&2
-              exit 1
-            }
+            if grep -Eqi 'not found|manifest unknown|no such manifest' \
+              inspected-manifest.error; then
+              return 1
+            fi
+            echo "Could not resolve image tag ${tag}:" >&2
+            cat inspected-manifest.error >&2
+            exit 1
+          }
+
+          anchor_exists=false
+          anchor_digest=
+          if inspect_tag "$ANCHOR_TAG"; then
+            anchor_exists=true
+            anchor_digest=$(jq -er '
+              .digest | select(test("^sha256:[0-9a-f]{64}$"))
+            ' inspected-manifest.json)
+          fi
+
+          for tag in "$VERSION" "$RELEASE_TAG"; do
+            if inspect_tag "$tag"; then
+              [[ $anchor_exists == true ]] || {
+                echo "Version tag ${tag} exists without the canonical SHA tag" >&2
+                exit 1
+              }
+              observed=$(jq -er '.digest' inspected-manifest.json)
+              [[ $observed == "$anchor_digest" ]] || {
+                echo "Image tag ${tag} points to a conflicting digest" >&2
+                exit 1
+              }
+            fi
           done
+
+          echo "anchor_exists=${anchor_exists}" >>"$GITHUB_OUTPUT"
+          echo "digest=${anchor_digest}" >>"$GITHUB_OUTPUT"
       - name: Extract immutable version metadata
         id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
@@ -160,19 +199,28 @@ jobs:
           METADATA_JSON: ${{ steps.meta.outputs.json }}
           EXPECTED_REVISION: ${{ inputs.release_sha || github.sha }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
           VERSION=${RELEASE_TAG#v}
           jq -e \
             --arg revision "$EXPECTED_REVISION" \
-            --arg version "$VERSION" '
+            --arg version "$VERSION" \
+            --arg release_tag "$RELEASE_TAG" \
+            --arg image "$IMAGE" '
             .labels["org.opencontainers.image.source"] ==
               "https://github.com/ericismyeldestson/chinese-poetry-api" and
             .labels["org.opencontainers.image.revision"] == $revision and
             .labels["org.opencontainers.image.licenses"] == "GPL-3.0-only" and
-            .labels["org.opencontainers.image.version"] == $version
+            .labels["org.opencontainers.image.version"] == $version and
+            (.tags | sort) == ([
+              $image + ":" + $release_tag,
+              $image + ":" + $version,
+              $image + ":sha-" + $revision
+            ] | sort)
           ' <<<"$METADATA_JSON" >/dev/null
-      - name: Build and push signed-source image
+      - name: Build and push the canonical SHA image
         id: push
+        if: steps.publication.outputs.anchor_exists != 'true'
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
@@ -180,63 +228,179 @@ jobs:
           push: true
           build-args: |
             VCS_REF=${{ inputs.release_sha || github.sha }}
-          tags: ${{ steps.meta.outputs.tags }}
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ inputs.release_sha || github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
-        with:
-          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-      - name: Verify pushed multi-platform runtime metadata
+      - name: Resolve the canonical image digest
+        id: subject
         env:
-          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+          ANCHOR_EXISTS: ${{ steps.publication.outputs.anchor_exists }}
+          EXISTING_DIGEST: ${{ steps.publication.outputs.digest }}
+          BUILT_DIGEST: ${{ steps.push.outputs.digest }}
+          RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          if [[ $ANCHOR_EXISTS == true ]]; then
+            IMAGE_DIGEST=$EXISTING_DIGEST
+          else
+            IMAGE_DIGEST=$BUILT_DIGEST
+          fi
+          [[ $IMAGE_DIGEST =~ ^sha256:[0-9a-f]{64}$ ]] || {
+            echo "Canonical image digest is missing or malformed" >&2
+            exit 1
+          }
+          for attempt in 1 2 3 4 5 6; do
+            if docker buildx imagetools inspect \
+              "${REGISTRY}/${IMAGE_NAME}:sha-${RELEASE_SHA}" \
+              --format '{{json .Manifest}}' \
+              > canonical-manifest.tmp 2> canonical-manifest.error; then
+              mv canonical-manifest.tmp canonical-manifest.json
+              break
+            fi
+            if [[ $attempt == 6 ]]; then
+              cat canonical-manifest.error >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          observed=$(jq -er '.digest' canonical-manifest.json)
+          [[ $observed == "$IMAGE_DIGEST" ]] || {
+            echo "Canonical SHA tag does not resolve to the expected digest" >&2
+            exit 1
+          }
+          echo "digest=${IMAGE_DIGEST}" >>"$GITHUB_OUTPUT"
+      - name: Verify the canonical image before publishing version tags
+        env:
+          IMAGE_DIGEST: ${{ steps.subject.outputs.digest }}
           RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
           RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
         run: |
           VERSION=${RELEASE_TAG#v}
           DATA_TAG=v${VERSION%.*}.0
+          scripts/verify-published-image.sh \
+            "${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}" \
+            "$RELEASE_SHA" "$VERSION" "$DATA_TAG" \
+            "${RUNNER_TEMP}/published-image-evidence"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.subject.outputs.digest }}
+          push-to-registry: true
+      - name: Verify GitHub provenance before publishing version tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_DIGEST: ${{ steps.subject.outputs.digest }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
           for attempt in 1 2 3 4 5 6; do
-            if docker buildx imagetools inspect \
-              "${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}" \
-              --format '{{json .Image}}' \
-              > published-images.tmp 2> published-images.error; then
-              mv published-images.tmp published-images.json
+            if gh attestation verify \
+              "oci://${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --source-digest "$RELEASE_SHA" \
+              --source-ref "refs/tags/${RELEASE_TAG}" \
+              --signer-digest "$RELEASE_SHA" \
+              --signer-workflow \
+                "${GITHUB_REPOSITORY}/.github/workflows/release-image.yml" \
+              --deny-self-hosted-runners \
+              --bundle-from-oci \
+              --format json \
+              > github-attestation.tmp 2> github-attestation.error; then
+              mv github-attestation.tmp github-attestation.json
               break
             fi
             if [[ $attempt == 6 ]]; then
-              cat published-images.error >&2
+              cat github-attestation.error >&2
               exit 1
             fi
             sleep 5
           done
-          jq -e \
-            --arg revision "$RELEASE_SHA" \
-            --arg version "$VERSION" \
-            --arg data_tag "$DATA_TAG" '
-              (keys | sort) == ["linux/amd64", "linux/arm64"] and
-              all(
-                to_entries[];
-                .key as $platform |
-                .value.os == "linux" and
-                .value.architecture == ($platform | split("/")[1]) and
-                .value.config.User == "10001:10001" and
-                .value.config.Entrypoint == ["./startup.sh"] and
-                .value.config.Labels["org.opencontainers.image.source"] ==
-                  "https://github.com/ericismyeldestson/chinese-poetry-api" and
-                .value.config.Labels["org.opencontainers.image.revision"] ==
-                  $revision and
-                .value.config.Labels["org.opencontainers.image.version"] ==
-                  $version and
-                .value.config.Labels["org.opencontainers.image.licenses"] ==
-                  "GPL-3.0-only" and
-                any(
-                  .value.config.Env[];
-                  . == ("DATA_RELEASE_VERSION=" + $data_tag)
-                )
-              )
-            ' published-images.json >/dev/null
+          jq -e 'length >= 1' github-attestation.json >/dev/null
+      - name: Complete and verify immutable version tags
+        env:
+          IMAGE_DIGEST: ${{ steps.subject.outputs.digest }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+        run: |
+          set -Eeuo pipefail
+          VERSION=${RELEASE_TAG#v}
+          IMAGE=${REGISTRY}/${IMAGE_NAME}
+
+          inspect_tag() {
+            local tag=$1
+            if docker buildx imagetools inspect "${IMAGE}:${tag}" \
+              --format '{{json .Manifest}}' \
+              > inspected-manifest.json 2> inspected-manifest.error; then
+              return 0
+            fi
+            if grep -Eqi 'not found|manifest unknown|no such manifest' \
+              inspected-manifest.error; then
+              return 1
+            fi
+            echo "Could not resolve image tag ${tag}:" >&2
+            cat inspected-manifest.error >&2
+            exit 1
+          }
+
+          verify_tag() {
+            local tag=$1
+            local attempt
+            local observed
+            for attempt in 1 2 3 4 5 6; do
+              if docker buildx imagetools inspect "${IMAGE}:${tag}" \
+                --format '{{json .Manifest}}' \
+                > final-manifest.tmp 2> final-manifest.error; then
+                mv final-manifest.tmp final-manifest.json
+                observed=$(jq -er '.digest' final-manifest.json)
+                [[ $observed == "$IMAGE_DIGEST" ]] || {
+                  echo "Image tag ${tag} points to a conflicting digest" >&2
+                  exit 1
+                }
+                return 0
+              fi
+              if [[ $attempt == 6 ]]; then
+                cat final-manifest.error >&2
+                exit 1
+              fi
+              sleep 5
+            done
+          }
+
+          missing_tags=()
+          for tag in "$VERSION" "$RELEASE_TAG"; do
+            if inspect_tag "$tag"; then
+              observed=$(jq -er '.digest' inspected-manifest.json)
+              [[ $observed == "$IMAGE_DIGEST" ]] || {
+                echo "Image tag ${tag} points to a conflicting digest" >&2
+                exit 1
+              }
+            else
+              missing_tags+=("$tag")
+            fi
+          done
+
+          if (( ${#missing_tags[@]} > 0 )); then
+            for tag in "${missing_tags[@]}"; do
+              if inspect_tag "$tag"; then
+                observed=$(jq -er '.digest' inspected-manifest.json)
+                [[ $observed == "$IMAGE_DIGEST" ]] || {
+                  echo "Image tag ${tag} appeared with a conflicting digest" >&2
+                  exit 1
+                }
+              else
+                docker buildx imagetools create \
+                  --tag "${IMAGE}:${tag}" "${IMAGE}@${IMAGE_DIGEST}"
+              fi
+              verify_tag "$tag"
+            done
+          fi
+
+          for tag in "sha-${RELEASE_SHA}" "$VERSION" "$RELEASE_TAG"; do
+            verify_tag "$tag"
+          done
+          echo "All immutable image tags resolve to ${IMAGE_DIGEST}"
