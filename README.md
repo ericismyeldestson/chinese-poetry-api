@@ -30,16 +30,20 @@
 
 ### 使用 Docker（推荐）
 
-独立版的第一个稳定候选是 **v1.0.0**。当前仓库尚未发布对应的 GHCR
-镜像和数据库 release，所以下面的命令只适用于 v1.0.0 正式发布之后；
-不能把本地镜像构建成功当作远端 release 已存在。
+独立版指定 **v1.1.0** 为第一个实际稳定发布目标。公开的 annotated
+`v1.0.0` 候选标签仍指向 `7e0fc7d1b59ab1488a0e532017fdc2271a49e37f`，并保留为
+审计记录：其 [Release Data run 31760804843](https://github.com/ericismyeldestson/chinese-poetry-api/actions/runs/31760804843)
+在创建任何发布物之前被 Go 1.25.12 标准库的可达漏洞门阻止，没有生成 Actions
+artifact、GitHub Release、数据库资产或 GHCR 镜像。只有远端 `v1.1.0` Release、
+镜像及其证明材料实际存在并通过校验后，下面的命令才代表可用的正式发行；本地
+构建成功不能替代这层证据。
 
 ```bash
 docker run -d --read-only --cap-drop ALL \
   --security-opt no-new-privileges \
   -p 127.0.0.1:1279:1279 \
   -v poetry-data:/app/data \
-  ghcr.io/ericismyeldestson/chinese-poetry-api:1.0.0
+  ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.0
 ```
 
 完整配置参见 [docker-compose.yml](docker-compose.yml)。Compose 同时保留了
@@ -221,7 +225,8 @@ query {
 产品为简繁各 372,239 首、13,814 位 canonical 作者，每种语言保留 388,857 条
 来源 witness。当前审定的 SQLite 资产为 1,883,009,024 bytes；发布门禁必须在
 Linux 从零完整构建两次，要求两份数据库及来源报告逐字节一致，并分别通过
-完整契约、SQLite quick check 和外键检查。远程 `v1.0.0` Release 仍未发布。
+完整契约、SQLite quick check 和外键检查。`v1.0.0` 仅是上述发布前门禁失败的
+候选标签；首个实际正式数据与镜像发布目标为 `v1.1.0`。
 canonical v2 先把身份字段转换为固定简体
 形态，再做分类、标题选择和作品合并。有意更换源 revision、转换器或身份算法时，
 必须审核并更新 contract，并再次完成双重建哈希门禁。运行时统计以 API `/stats`

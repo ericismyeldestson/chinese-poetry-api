@@ -3,7 +3,7 @@
 Small, reviewable pull requests are preferred. Use a feature branch, explain
 the root cause and compatibility impact, and include tests for behavior changes.
 
-The project requires Go 1.25.12, CGO, and SQLite built with FTS5 support. Before
+The project requires Go 1.25.13, CGO, and SQLite built with FTS5 support. Before
 opening a pull request, run:
 
 ```bash
