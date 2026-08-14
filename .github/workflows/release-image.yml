@@ -151,6 +151,26 @@ jobs:
             type=raw,value=${{ inputs.release_tag || github.ref_name }}
             type=semver,value=${{ inputs.release_tag || github.ref_name }},pattern={{version}}
             type=raw,value=sha-${{ inputs.release_sha || github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ inputs.release_sha || github.sha }}
+            org.opencontainers.image.licenses=GPL-3.0-only
+      - name: Verify immutable image metadata before publishing
+        env:
+          METADATA_JSON: ${{ steps.meta.outputs.json }}
+          EXPECTED_REVISION: ${{ inputs.release_sha || github.sha }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+        run: |
+          VERSION=${RELEASE_TAG#v}
+          jq -e \
+            --arg revision "$EXPECTED_REVISION" \
+            --arg version "$VERSION" '
+            .labels["org.opencontainers.image.source"] ==
+              "https://github.com/ericismyeldestson/chinese-poetry-api" and
+            .labels["org.opencontainers.image.revision"] == $revision and
+            .labels["org.opencontainers.image.licenses"] == "GPL-3.0-only" and
+            .labels["org.opencontainers.image.version"] == $version
+          ' <<<"$METADATA_JSON" >/dev/null
       - name: Build and push signed-source image
         id: push
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
@@ -172,3 +192,51 @@ jobs:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
+      - name: Verify pushed multi-platform runtime metadata
+        env:
+          IMAGE_DIGEST: ${{ steps.push.outputs.digest }}
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          RELEASE_SHA: ${{ inputs.release_sha || github.sha }}
+        run: |
+          VERSION=${RELEASE_TAG#v}
+          DATA_TAG=v${VERSION%.*}.0
+          for attempt in 1 2 3 4 5 6; do
+            if docker buildx imagetools inspect \
+              "${REGISTRY}/${IMAGE_NAME}@${IMAGE_DIGEST}" \
+              --format '{{json .Image}}' \
+              > published-images.tmp 2> published-images.error; then
+              mv published-images.tmp published-images.json
+              break
+            fi
+            if [[ $attempt == 6 ]]; then
+              cat published-images.error >&2
+              exit 1
+            fi
+            sleep 5
+          done
+          jq -e \
+            --arg revision "$RELEASE_SHA" \
+            --arg version "$VERSION" \
+            --arg data_tag "$DATA_TAG" '
+              (keys | sort) == ["linux/amd64", "linux/arm64"] and
+              all(
+                to_entries[];
+                .key as $platform |
+                .value.os == "linux" and
+                .value.architecture == ($platform | split("/")[1]) and
+                .value.config.User == "10001:10001" and
+                .value.config.Entrypoint == ["./startup.sh"] and
+                .value.config.Labels["org.opencontainers.image.source"] ==
+                  "https://github.com/ericismyeldestson/chinese-poetry-api" and
+                .value.config.Labels["org.opencontainers.image.revision"] ==
+                  $revision and
+                .value.config.Labels["org.opencontainers.image.version"] ==
+                  $version and
+                .value.config.Labels["org.opencontainers.image.licenses"] ==
+                  "GPL-3.0-only" and
+                any(
+                  .value.config.Env[];
+                  . == ("DATA_RELEASE_VERSION=" + $data_tag)
+                )
+              )
+            ' published-images.json >/dev/null
