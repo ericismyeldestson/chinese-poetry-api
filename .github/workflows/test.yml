@@ -72,8 +72,10 @@ jobs:
         run: sh scripts/verify-data-contract.sh --contract-only
       - name: Run atomic startup regression scenarios
         run: sh scripts/test-startup.sh
+      - name: Verify container dependency policy
+        run: sh scripts/test-container-dependency-policy.sh
       - name: Lint release shell scripts
-        run: shellcheck scripts/startup.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
+        run: shellcheck scripts/startup.sh scripts/verify-container-dependency-policy.sh scripts/test-container-dependency-policy.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
       - name: Validate Compose model
         run: docker compose config --quiet
 
@@ -200,8 +202,7 @@ jobs:
           outputs: type=oci,dest=${{ runner.temp }}/chinese-poetry-api.oci.tar
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=container-preflight
-          cache-to: type=gha,scope=container-preflight,mode=max
+          no-cache: true
       - name: Verify both platforms, SPDX SBOMs, and SLSA provenance
         run: |
           scripts/verify-oci-image.sh \

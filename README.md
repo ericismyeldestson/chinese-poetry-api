@@ -36,21 +36,28 @@
 在创建任何发布物之前被 Go 1.25.12 标准库的可达漏洞门阻止，没有生成 Actions
 artifact、GitHub Release、数据库资产或 GHCR 镜像。`v1.1.0` 的不可变数据
 Release 与镜像已经发布；后验校验发现其镜像的自动 OCI 标签把精确的
-`GPL-3.0-only` 写成了已弃用别名 `GPL-3.0`。`v1.1.1` 只纠正镜像元数据并继续
-绑定、校验 `v1.1.0` 的同一份数据资产，不重发数据库。
+`GPL-3.0-only` 写成了已弃用别名 `GPL-3.0`。`v1.1.1` 的数据、测试和许可证
+门禁全部通过，但 Alpine 3.23 仓库已经替换 Dockerfile 精确固定的旧
+`sqlite-dev` revision，镜像在 push 前构建失败；该 annotated tag 同样保留为无
+Release、无镜像的审计记录。`v1.1.2` 修正 OCI 元数据与 APK 最低基线策略，并
+继续绑定、校验 `v1.1.0` 的同一份数据资产，不重发数据库。
 
 ```bash
 docker run -d --read-only --cap-drop ALL \
   --security-opt no-new-privileges \
   -p 127.0.0.1:1279:1279 \
   -v poetry-data:/app/data \
-  ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.1
+  ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.2
 ```
 
 完整配置参见 [docker-compose.yml](docker-compose.yml)。Compose 同时保留了
 `build: .`，便于在 release 前验证本地镜像；容器首次启动仍必须取得一个通过
 schema v2、checksum 和 SQLite 完整性验证的数据资产。容器以 UID/GID 10001
 运行；推荐使用命名卷，若改用宿主机 bind mount，目录必须对该 UID/GID 可写。
+基础镜像按 tag 与 digest 双重固定；稳定 Alpine 分支中的直接 APK 依赖使用审定
+最低版本，允许分支安全更新替换旧 revision。每次实际解析出的双架构包版本由
+包含 builder stage 的 SPDX SBOM 与 SLSA provenance 记录；PR、`main` 与正式
+镜像发布均执行不复用层缓存的双架构构建，并在发布版本 tag 出现前完成远端验证。
 
 ### 使用 Makefile
 
@@ -228,7 +235,8 @@ query {
 Linux 从零完整构建两次，要求两份数据库及来源报告逐字节一致，并分别通过
 完整契约、SQLite quick check 和外键检查。`v1.0.0` 仅是上述发布前门禁失败的
 候选标签；首个实际正式数据与镜像发布为 `v1.1.0`，严格 OCI 许可证标签从
-镜像补丁 `v1.1.1` 起固定为 `GPL-3.0-only`。
+镜像补丁 `v1.1.2` 起固定为 `GPL-3.0-only`；`v1.1.1` 保留为构建失败且
+没有发布镜像的审计标签。
 canonical v2 先把身份字段转换为固定简体
 形态，再做分类、标题选择和作品合并。有意更换源 revision、转换器或身份算法时，
 必须审核并更新 contract，并再次完成双重建哈希门禁。运行时统计以 API `/stats`

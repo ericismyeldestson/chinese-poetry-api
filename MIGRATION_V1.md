@@ -4,8 +4,10 @@
 数据身份、数据库 schema、查询边界和发布 namespace 都发生了破坏性变化。
 `v1.0.0` 候选标签在创建发布物之前被可达漏洞门阻止并保留作为审计记录；它没有
 对应的 GitHub Release、数据库资产或 GHCR 镜像。`v1.1.0` 已发布不可变数据
-Release；镜像补丁 `v1.1.1` 修正发布自动标签对 `GPL-3.0-only` 的覆盖，并继续
-使用、校验这份 `v1.1.0` 数据。
+Release。`v1.1.1` 的镜像构建在 push 前被已经退出 Alpine APKINDEX 的旧精确包
+revision 阻止，该 annotated tag 保留为无 Release、无镜像的审计记录；后续镜像
+补丁 `v1.1.2` 修正发布自动标签对 `GPL-3.0-only` 的覆盖，并继续使用、校验这份
+`v1.1.0` 数据。
 
 ## 数据库必须重建或重新下载
 
@@ -66,10 +68,10 @@ verifier 都会明确拒绝它，必须改用已发布资产或用当前固定�
 
 ## 镜像与数据 namespace
 
-- 容器镜像迁移到 `ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.1`。
+- 容器镜像迁移到 `ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.2`。
 - 数据资产迁移到本仓库 `v1.1.0` release；startup 默认不会下载上游 release。
-- `v1.1.1` 是只含镜像修正的 patch tag，仍绑定 `v1.1.0` 数据 release；不会复制
-  或重建一套同内容的 patch 数据资产。
+- `v1.1.2` 是只含镜像修正的 patch 版本，仍绑定 `v1.1.0` 数据 release；不会复制
+  或重建一套同内容的 patch 数据资产。`v1.1.1` 仅用于审计失败的镜像构建。
 - 镜像 tag、数据 release、schema 和 release manifest 必须成套核对。不要使用
   可变 `latest` 作为部署依据。
 

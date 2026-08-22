@@ -1,6 +1,10 @@
-# Build stage. Both images are pinned by tag and digest for reproducible builds.
+# Both base images are pinned by tag and digest. Direct APK dependencies use
+# reviewed minimum versions within those stable Alpine branches: Alpine replaces
+# superseded package revisions in-place, while the resolved versions remain
+# captured by the release SBOM and provenance.
 FROM golang:1.25.13-alpine3.23@sha256:4ce6af6747b07e99ca3a57eadb77565787390a41b0039dcc8e09ec4c57cfa125 AS builder
 
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
 ARG VCS_REF=unknown
 
 LABEL org.opencontainers.image.source="https://github.com/ericismyeldestson/chinese-poetry-api" \
@@ -11,10 +15,10 @@ WORKDIR /build
 
 # Install build dependencies
 RUN apk add --no-cache \
-    git=2.52.0-r0 \
-    gcc=15.2.0-r2 \
-    musl-dev=1.2.5-r23 \
-    sqlite-dev=3.51.2-r0
+    "git>=2.52.0-r0" \
+    "gcc>=15.2.0-r2" \
+    "musl-dev>=1.2.5-r23" \
+    "sqlite-dev>=3.51.2-r0"
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
@@ -43,11 +47,11 @@ LABEL org.opencontainers.image.source="https://github.com/ericismyeldestson/chin
       org.opencontainers.image.revision="$VCS_REF"
 
 RUN apk add --no-cache \
-    ca-certificates=20260611-r0 \
-    curl=8.14.1-r3 \
-    gzip=1.14-r1 \
-    sqlite=3.49.2-r1 \
-    tzdata=2026c-r0 \
+    "ca-certificates>=20260611-r0" \
+    "curl>=8.14.1-r3" \
+    "gzip>=1.14-r1" \
+    "sqlite>=3.49.2-r1" \
+    "tzdata>=2026c-r0" \
     && addgroup -g 10001 -S poetry \
     && adduser -u 10001 -S -D -H -G poetry poetry \
     && mkdir -p /app/data \

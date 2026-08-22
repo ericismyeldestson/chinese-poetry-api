@@ -182,9 +182,10 @@ for arch in amd64 arm64; do
         .schemaVersion == 2 and
         .mediaType == "application/vnd.oci.image.manifest.v1+json" and
         (.layers | type) == "array" and
-        (.layers | length) == 2 and
+        (.layers | length) == 3 and
         ([.layers[].annotations["in-toto.io/predicate-type"]] | sort) ==
-            ["https://slsa.dev/provenance/v1", "https://spdx.dev/Document"] and
+            ["https://slsa.dev/provenance/v1", "https://spdx.dev/Document",
+             "https://spdx.dev/Document"] and
         all(.layers[]; .mediaType == "application/vnd.in-toto+json")
     ' "$attestation_manifest" >/dev/null ||
         die "linux/$arch attestation predicate set is incomplete or unexpected"
@@ -250,74 +251,158 @@ for arch in amd64 arm64; do
             ;;
     esac
 
-    for predicate_type in https://spdx.dev/Document https://slsa.dev/provenance/v1; do
-        predicate_descriptors=()
-        while IFS= read -r descriptor; do
-            predicate_descriptors+=("$descriptor")
-        done < <(jq -c --arg predicate "$predicate_type" '
-            .layers[] | select(.annotations["in-toto.io/predicate-type"] == $predicate)
-        ' "$attestation_manifest")
-        ((${#predicate_descriptors[@]} == 1)) ||
-            die "linux/$arch must have exactly one $predicate_type statement"
-        predicate_descriptor=${predicate_descriptors[0]}
+    spdx_descriptors=()
+    while IFS= read -r descriptor; do
+        spdx_descriptors+=("$descriptor")
+    done < <(jq -c '
+        .layers[] |
+        select(.annotations["in-toto.io/predicate-type"] ==
+            "https://spdx.dev/Document")
+    ' "$attestation_manifest")
+    ((${#spdx_descriptors[@]} == 2)) ||
+        die "linux/$arch must have one runtime and one builder SPDX statement"
+
+    builder_sbom_count=0
+    runtime_sbom_count=0
+    for predicate_descriptor in "${spdx_descriptors[@]}"; do
         predicate_digest=$(jq -er '.digest' <<<"$predicate_descriptor")
         predicate_size=$(jq -er '.size' <<<"$predicate_descriptor")
         verify_descriptor "$predicate_digest" "$predicate_size"
         predicate_body=$(blob_path "$predicate_digest")
         image_sha=${image_digest#sha256:}
 
-        jq -e --arg predicate "$predicate_type" --arg image_sha "$image_sha" '
+        jq -e --arg image_sha "$image_sha" '
             ._type == "https://in-toto.io/Statement/v1" and
-            .predicateType == $predicate and
+            .predicateType == "https://spdx.dev/Document" and
             (.subject | type) == "array" and
             ((.subject | length) == 0 or
                 all(.subject[]; .digest.sha256 == $image_sha))
         ' "$predicate_body" >/dev/null ||
-            die "linux/$arch $predicate_type envelope does not match its image manifest"
+            die "linux/$arch SPDX envelope does not match its image manifest"
 
-        if [[ $predicate_type == https://spdx.dev/Document ]]; then
+        jq -e '
+            .predicate.SPDXID == "SPDXRef-DOCUMENT" and
+            .predicate.spdxVersion == "SPDX-2.3" and
+            .predicate.dataLicense == "CC0-1.0" and
+            (.predicate.packages | type) == "array" and
+            (.predicate.packages | length) > 0 and
+            (.predicate.files | type) == "array" and
+            (.predicate.files | length) > 0
+        ' "$predicate_body" >/dev/null || die "linux/$arch SPDX SBOM is incomplete"
+
+        sbom_role=
+        if jq -e '
+            . as $statement |
+            all(["git", "gcc", "musl-dev", "sqlite-dev"][];
+                . as $name |
+                any($statement.predicate.packages[];
+                    .name == $name and
+                    (.versionInfo | type) == "string" and
+                    (.versionInfo | length) > 0))
+        ' "$predicate_body" >/dev/null; then
+            sbom_role=builder
+            ((builder_sbom_count += 1))
             jq -e '
-                .predicate.SPDXID == "SPDXRef-DOCUMENT" and
-                .predicate.spdxVersion == "SPDX-2.3" and
-                .predicate.dataLicense == "CC0-1.0" and
-                (.predicate.packages | type) == "array" and
-                (.predicate.packages | length) > 0 and
-                (.predicate.files | type) == "array" and
-                (.predicate.files | length) > 0 and
-                any(.predicate.packages[];
-                    .name == "github.com/ericismyeldestson/chinese-poetry-api")
-            ' "$predicate_body" >/dev/null || die "linux/$arch SPDX SBOM is incomplete"
-            [[ -z $evidence_dir ]] || cp "$predicate_body" "$evidence_dir/sbom-$arch.spdx.json"
-        else
-            jq -e --arg revision "$expected_revision" --arg arch "$arch" \
-                --arg encoded "platform=linux%2F$arch" '
-                .predicate.buildDefinition.buildType ==
-                    "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md" and
-                .predicate.buildDefinition.externalParameters.request.args[
-                    "build-arg:VCS_REF"] == $revision and
-                .predicate.buildDefinition.externalParameters.request.root.request.args[
-                    "vcs:revision"] == $revision and
-                (.predicate.buildDefinition.externalParameters.request.root.request.args[
-                    "vcs:source"] ==
-                    "https://github.com/ericismyeldestson/chinese-poetry-api" or
-                 .predicate.buildDefinition.externalParameters.request.root.request.args[
-                    "vcs:source"] ==
-                    "https://github.com/ericismyeldestson/chinese-poetry-api.git") and
-                (.predicate.buildDefinition.resolvedDependencies | type) == "array" and
-                (.predicate.buildDefinition.resolvedDependencies | length) >= 2 and
-                all(.predicate.buildDefinition.resolvedDependencies[];
-                    (.uri | type) == "string" and
-                    (.digest.sha256 | type) == "string" and
-                    (.digest.sha256 | test("^[0-9a-f]{64}$"))) and
-                any(.predicate.buildDefinition.resolvedDependencies[];
-                    .uri | contains($encoded)) and
-                ([.predicate.buildDefinition.internalParameters.buildConfig.llbDefinition[] |
-                    .op.platform? | select(. != null) |
-                    select(.OS == "linux" and .Architecture == $arch)] | length) > 0
-            ' "$predicate_body" >/dev/null || die "linux/$arch SLSA provenance contract failed"
-            [[ -z $evidence_dir ]] || cp "$predicate_body" "$evidence_dir/provenance-$arch.json"
+                def version($name):
+                    [.predicate.packages[] |
+                        select(.name == $name) |
+                        .versionInfo |
+                        select(type == "string" and length > 0)] |
+                    unique |
+                    if length == 1 then .[0] else error($name) end;
+                {git: version("git"), gcc: version("gcc"),
+                 "musl-dev": version("musl-dev"),
+                 "sqlite-dev": version("sqlite-dev")}
+            ' "$predicate_body" >"$oci/builder-packages-$arch.json" ||
+                die "linux/$arch builder package versions are ambiguous"
         fi
+        if jq -e '
+            . as $statement |
+            any($statement.predicate.packages[];
+                .name == "github.com/ericismyeldestson/chinese-poetry-api") and
+            all(["ca-certificates", "curl", "gzip", "sqlite", "tzdata"][];
+                . as $name |
+                any($statement.predicate.packages[];
+                    .name == $name and
+                    (.versionInfo | type) == "string" and
+                    (.versionInfo | length) > 0))
+        ' "$predicate_body" >/dev/null; then
+            [[ -z $sbom_role ]] ||
+                die "linux/$arch SPDX statement matches both image stages"
+            sbom_role=runtime
+            ((runtime_sbom_count += 1))
+            jq -e '
+                def version($name):
+                    [.predicate.packages[] |
+                        select(.name == $name) |
+                        .versionInfo |
+                        select(type == "string" and length > 0)] |
+                    unique |
+                    if length == 1 then .[0] else error($name) end;
+                {"ca-certificates": version("ca-certificates"),
+                 curl: version("curl"), gzip: version("gzip"),
+                 sqlite: version("sqlite"), tzdata: version("tzdata")}
+            ' "$predicate_body" >"$oci/runtime-packages-$arch.json" ||
+                die "linux/$arch runtime package versions are ambiguous"
+        fi
+        [[ -n $sbom_role ]] || die "linux/$arch SPDX statement has an unknown stage"
+        [[ -z $evidence_dir ]] ||
+            cp "$predicate_body" "$evidence_dir/sbom-$sbom_role-$arch.spdx.json"
     done
+    ((builder_sbom_count == 1 && runtime_sbom_count == 1)) ||
+        die "linux/$arch must have exactly one SPDX statement for each image stage"
+
+    slsa_descriptors=()
+    while IFS= read -r descriptor; do
+        slsa_descriptors+=("$descriptor")
+    done < <(jq -c '
+        .layers[] |
+        select(.annotations["in-toto.io/predicate-type"] ==
+            "https://slsa.dev/provenance/v1")
+    ' "$attestation_manifest")
+    ((${#slsa_descriptors[@]} == 1)) ||
+        die "linux/$arch must have exactly one SLSA provenance statement"
+    predicate_descriptor=${slsa_descriptors[0]}
+    predicate_digest=$(jq -er '.digest' <<<"$predicate_descriptor")
+    predicate_size=$(jq -er '.size' <<<"$predicate_descriptor")
+    verify_descriptor "$predicate_digest" "$predicate_size"
+    predicate_body=$(blob_path "$predicate_digest")
+    image_sha=${image_digest#sha256:}
+    jq -e --arg image_sha "$image_sha" '
+        ._type == "https://in-toto.io/Statement/v1" and
+        .predicateType == "https://slsa.dev/provenance/v1" and
+        (.subject | type) == "array" and
+        ((.subject | length) == 0 or
+            all(.subject[]; .digest.sha256 == $image_sha))
+    ' "$predicate_body" >/dev/null ||
+        die "linux/$arch SLSA envelope does not match its image manifest"
+    jq -e --arg revision "$expected_revision" --arg arch "$arch" \
+        --arg encoded "platform=linux%2F$arch" '
+        .predicate.buildDefinition.buildType ==
+            "https://github.com/moby/buildkit/blob/master/docs/attestations/slsa-definitions.md" and
+        .predicate.buildDefinition.externalParameters.request.args[
+            "build-arg:VCS_REF"] == $revision and
+        .predicate.buildDefinition.externalParameters.request.root.request.args[
+            "vcs:revision"] == $revision and
+        (.predicate.buildDefinition.externalParameters.request.root.request.args[
+            "vcs:source"] ==
+            "https://github.com/ericismyeldestson/chinese-poetry-api" or
+         .predicate.buildDefinition.externalParameters.request.root.request.args[
+            "vcs:source"] ==
+            "https://github.com/ericismyeldestson/chinese-poetry-api.git") and
+        (.predicate.buildDefinition.resolvedDependencies | type) == "array" and
+        (.predicate.buildDefinition.resolvedDependencies | length) >= 2 and
+        all(.predicate.buildDefinition.resolvedDependencies[];
+            (.uri | type) == "string" and
+            (.digest.sha256 | type) == "string" and
+            (.digest.sha256 | test("^[0-9a-f]{64}$"))) and
+        any(.predicate.buildDefinition.resolvedDependencies[];
+            .uri | contains($encoded)) and
+        ([.predicate.buildDefinition.internalParameters.buildConfig.llbDefinition[] |
+            .op.platform? | select(. != null) |
+            select(.OS == "linux" and .Architecture == $arch)] | length) > 0
+    ' "$predicate_body" >/dev/null || die "linux/$arch SLSA provenance contract failed"
+    [[ -z $evidence_dir ]] || cp "$predicate_body" "$evidence_dir/provenance-$arch.json"
 
     [[ -z $evidence_dir ]] || cp "$config" "$evidence_dir/image-config-$arch.json"
     [[ -z $evidence_dir ]] || cp "$image_manifest" "$evidence_dir/image-manifest-$arch.json"
@@ -328,4 +413,11 @@ for arch in amd64 arm64; do
     echo "verified linux/$arch image=$image_digest attestation=$attestation_digest"
 done
 
-echo "multi-platform OCI image, SPDX SBOMs, and SLSA provenance verified"
+jq -e -s '.[0] == .[1]' \
+    "$oci/builder-packages-amd64.json" "$oci/builder-packages-arm64.json" >/dev/null ||
+    die "builder package versions differ between amd64 and arm64"
+jq -e -s '.[0] == .[1]' \
+    "$oci/runtime-packages-amd64.json" "$oci/runtime-packages-arm64.json" >/dev/null ||
+    die "runtime package versions differ between amd64 and arm64"
+
+echo "multi-platform OCI image, runtime and builder SPDX SBOMs, and SLSA provenance verified"

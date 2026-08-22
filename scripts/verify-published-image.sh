@@ -137,23 +137,77 @@ jq -e \
 ' "$work_dir/image.json" >/dev/null || die "published runtime config contract failed"
 
 jq -e '
+    def documents: [.SPDX] + .AdditionalSPDXs;
+    def valid_spdx:
+        .SPDXID == "SPDXRef-DOCUMENT" and
+        .spdxVersion == "SPDX-2.3" and
+        .dataLicense == "CC0-1.0" and
+        (.packages | type) == "array" and
+        (.packages | length) > 0 and
+        (.files | type) == "array" and
+        (.files | length) > 0;
+    def has_package($name):
+        any(.packages[];
+            .name == $name and
+            (.versionInfo | type) == "string" and
+            (.versionInfo | length) > 0);
+    def is_builder:
+        has_package("git") and has_package("gcc") and
+        has_package("musl-dev") and has_package("sqlite-dev");
+    def is_runtime:
+        any(.packages[];
+            .name == "github.com/ericismyeldestson/chinese-poetry-api") and
+        has_package("ca-certificates") and has_package("curl") and
+        has_package("gzip") and has_package("sqlite") and has_package("tzdata");
+    def package_version($name):
+        [.packages[] |
+            select(.name == $name) |
+            .versionInfo |
+            select(type == "string" and length > 0)] |
+        unique |
+        if length == 1 then .[0] else null end;
+
+    . as $root |
     (keys | sort) == ["linux/amd64", "linux/arm64"] and
     all(
         to_entries[];
-        (.value | keys) == ["SPDX"] and
-        .value.SPDX.SPDXID == "SPDXRef-DOCUMENT" and
-        .value.SPDX.spdxVersion == "SPDX-2.3" and
-        .value.SPDX.dataLicense == "CC0-1.0" and
-        (.value.SPDX.packages | type) == "array" and
-        (.value.SPDX.packages | length) > 0 and
-        (.value.SPDX.files | type) == "array" and
-        (.value.SPDX.files | length) > 0 and
-        any(
-            .value.SPDX.packages[];
-            .name == "github.com/ericismyeldestson/chinese-poetry-api"
-        )
+        .value as $record |
+        (($record | keys | sort) == ["AdditionalSPDXs", "SPDX"]) and
+        (($record.AdditionalSPDXs | type) == "array") and
+        (($record.AdditionalSPDXs | length) == 1) and
+        (($record | documents) as $documents |
+            ($documents | length) == 2 and
+            all($documents[]; valid_spdx) and
+            all($documents[];
+                (is_builder or is_runtime) and
+                ((is_builder and is_runtime) | not)) and
+            ([$documents[] | select(is_builder)] | length) == 1 and
+            ([$documents[] | select(is_runtime)] | length) == 1)
+    ) and
+    all(
+        ["git", "gcc", "musl-dev", "sqlite-dev"][];
+        . as $name |
+        ([$root | to_entries[] |
+            (.value | documents)[] |
+            select(is_builder) |
+            package_version($name)]) as $versions |
+        ($versions | length) == 2 and
+        all($versions[]; . != null) and
+        ($versions | unique | length) == 1
+    ) and
+    all(
+        ["ca-certificates", "curl", "gzip", "sqlite", "tzdata"][];
+        . as $name |
+        ([$root | to_entries[] |
+            (.value | documents)[] |
+            select(is_runtime) |
+            package_version($name)]) as $versions |
+        ($versions | length) == 2 and
+        all($versions[]; . != null) and
+        ($versions | unique | length) == 1
     )
-' "$work_dir/sbom.json" >/dev/null || die "published SPDX SBOM contract failed"
+' "$work_dir/sbom.json" >/dev/null ||
+    die "published runtime and builder SPDX SBOM contract failed"
 
 builder_prefix="https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/"
 jq -e \
@@ -216,4 +270,4 @@ if [[ -n $evidence_dir ]]; then
     cp "$work_dir/provenance.json" "$evidence_dir/provenance.json"
 fi
 
-echo "published multi-platform image, runtime metadata, SPDX SBOMs, and SLSA provenance verified"
+echo "published multi-platform image, runtime metadata, runtime and builder SPDX SBOMs, and SLSA provenance verified"
