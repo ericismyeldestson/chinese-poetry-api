@@ -52,6 +52,7 @@ jobs:
         run: |
           sh scripts/verify-data-contract.sh --contract-only
           sh scripts/test-startup.sh
+          sh scripts/verify-container-dependency-policy.sh
           sh scripts/verify-license-contract.sh
       - name: Verify the exact published data release and every required asset
         env:
@@ -230,10 +231,9 @@ jobs:
             VCS_REF=${{ inputs.release_sha || github.sha }}
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ inputs.release_sha || github.sha }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
           provenance: mode=max
           sbom: true
+          no-cache: true
       - name: Resolve the canonical image digest
         id: subject
         env:
