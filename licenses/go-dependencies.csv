@@ -1,9 +1,10 @@
 filippo.io/edwards25519,https://github.com/FiloSottile/edwards25519/blob/v1.2.0/LICENSE,BSD-3-Clause
-github.com/99designs/gqlgen,https://github.com/99designs/gqlgen/blob/v0.17.90/LICENSE,MIT
+github.com/99designs/gqlgen,https://github.com/99designs/gqlgen/blob/v0.17.94/LICENSE,MIT
 github.com/VividCortex/ewma,https://github.com/VividCortex/ewma/blob/v1.2.0/LICENSE,MIT
 github.com/acarl005/stripansi,https://github.com/acarl005/stripansi/blob/5a71ef0e047d/LICENSE,MIT
 github.com/agnivade/levenshtein,https://github.com/agnivade/levenshtein/blob/v1.2.1/License.txt,MIT
 github.com/clipperhouse/uax29/v2/graphemes,https://github.com/clipperhouse/uax29/blob/v2.7.0/LICENSE,MIT
+github.com/coder/websocket,https://github.com/coder/websocket/blob/v1.8.15/LICENSE.txt,ISC
 github.com/ericismyeldestson/chinese-poetry-api,https://github.com/ericismyeldestson/chinese-poetry-api/blob/HEAD/LICENSE,GPL-3.0
 github.com/fhluo/hanconv/go,https://github.com/fhluo/hanconv/blob/go/v0.3.0/go/LICENSE,MIT
 github.com/fsnotify/fsnotify,https://github.com/fsnotify/fsnotify/blob/v1.9.0/LICENSE,BSD-3-Clause
@@ -17,7 +18,6 @@ github.com/go-sql-driver/mysql,https://github.com/go-sql-driver/mysql/blob/v1.9.
 github.com/go-viper/mapstructure/v2,https://github.com/go-viper/mapstructure/blob/v2.5.0/LICENSE,MIT
 github.com/goccy/go-yaml,https://github.com/goccy/go-yaml/blob/v1.19.2/LICENSE,MIT
 github.com/google/uuid,https://github.com/google/uuid/blob/v1.6.0/LICENSE,BSD-3-Clause
-github.com/gorilla/websocket,https://github.com/gorilla/websocket/blob/v1.5.0/LICENSE,BSD-2-Clause
 github.com/hashicorp/golang-lru/v2,https://github.com/hashicorp/golang-lru/blob/v2.0.7/LICENSE,MPL-2.0
 github.com/hashicorp/golang-lru/v2/simplelru,https://github.com/hashicorp/golang-lru/blob/v2.0.7/simplelru/LICENSE_list,BSD-3-Clause
 github.com/jinzhu/inflection,https://github.com/jinzhu/inflection/blob/v1.0.0/LICENSE,MIT
@@ -45,11 +45,11 @@ go.mongodb.org/mongo-driver/v2,https://github.com/mongodb/mongo-go-driver/blob/v
 go.uber.org/multierr,https://github.com/uber-go/multierr/blob/v1.11.0/LICENSE.txt,MIT
 go.uber.org/zap,https://github.com/uber-go/zap/blob/v1.28.0/LICENSE,MIT
 go.yaml.in/yaml/v3,https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE,MIT
-golang.org/x/crypto,https://cs.opensource.google/go/x/crypto/+/v0.53.0:LICENSE,BSD-3-Clause
-golang.org/x/net,https://cs.opensource.google/go/x/net/+/v0.56.0:LICENSE,BSD-3-Clause
-golang.org/x/sync/semaphore,https://cs.opensource.google/go/x/sync/+/v0.21.0:LICENSE,BSD-3-Clause
+golang.org/x/crypto,https://cs.opensource.google/go/x/crypto/+/v0.54.0:LICENSE,BSD-3-Clause
+golang.org/x/net,https://cs.opensource.google/go/x/net/+/v0.57.0:LICENSE,BSD-3-Clause
+golang.org/x/sync/semaphore,https://cs.opensource.google/go/x/sync/+/v0.22.0:LICENSE,BSD-3-Clause
 golang.org/x/sys,https://cs.opensource.google/go/x/sys/+/v0.47.0:LICENSE,BSD-3-Clause
-golang.org/x/text,https://cs.opensource.google/go/x/text/+/v0.39.0:LICENSE,BSD-3-Clause
+golang.org/x/text,https://cs.opensource.google/go/x/text/+/v0.40.0:LICENSE,BSD-3-Clause
 golang.org/x/time/rate,https://cs.opensource.google/go/x/time/+/v0.15.0:LICENSE,BSD-3-Clause
 google.golang.org/protobuf,https://github.com/protocolbuffers/protobuf-go/blob/v1.36.11/LICENSE,BSD-3-Clause
 gorm.io/datatypes,https://github.com/go-gorm/datatypes/blob/v1.2.7/License,MIT
