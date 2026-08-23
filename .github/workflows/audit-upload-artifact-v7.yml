@@ -118,7 +118,7 @@ jobs:
           release_json="${RUNNER_TEMP}/release.json"
 
           [[ $ARTIFACT_ID =~ ^[0-9]+$ ]]
-          [[ $ARTIFACT_DIGEST =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ $ARTIFACT_DIGEST =~ ^[0-9a-f]{64}$ ]]
           gh api \
             "repos/${GITHUB_REPOSITORY}/releases/tags/${AUDIT_RELEASE_TAG}" \
             >"$release_json"
@@ -153,6 +153,6 @@ jobs:
             echo "- Files verified: 9"
             echo "- Payload bytes verified: \`${actual_total}\`"
             echo "- Artifact ID: \`${ARTIFACT_ID}\`"
-            echo "- Artifact digest: \`${ARTIFACT_DIGEST}\`"
+            echo "- Artifact digest: \`sha256:${ARTIFACT_DIGEST}\`"
             echo "- Consumer: pinned \`actions/download-artifact@v4\`"
           } >>"$GITHUB_STEP_SUMMARY"
