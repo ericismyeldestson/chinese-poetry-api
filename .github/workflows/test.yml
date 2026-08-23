@@ -38,14 +38,40 @@ jobs:
         run: go vet -tags sqlite_fts5 ./...
 
       - name: Run tests
-        run: go test -tags sqlite_fts5 -v -race -coverprofile=coverage.out -covermode=atomic ./...
+        run: go test -tags sqlite_fts5 -v -race ./...
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@a99c28d3f0da835de33ff2feb2e15691c7b9641f # v7
+  coverage-upload:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == github.repository_owner &&
+       github.actor == github.repository_owner)
+    needs:
+      - test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout trusted code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: 1.25.13
+          cache: true
+      - name: Generate coverage
+        run: go test -tags sqlite_fts5 -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Upload coverage to Codecov with OIDC
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
         with:
           files: ./coverage.out
           flags: unittests
-          fail_ci_if_error: false
+          use_oidc: true
+          fail_ci_if_error: true
 
   vulnerability-scan:
     runs-on: ubuntu-latest
@@ -68,6 +94,10 @@ jobs:
         with:
           persist-credentials: false
           submodules: false
+      - name: Verify CI workflow security policy
+        run: sh scripts/test-ci-workflow-policy.sh
+      - name: Run CI workflow policy regression scenarios
+        run: sh scripts/test-ci-workflow-policy-regressions.sh
       - name: Verify pinned data provenance contract
         run: sh scripts/verify-data-contract.sh --contract-only
       - name: Run atomic startup regression scenarios
@@ -75,7 +105,7 @@ jobs:
       - name: Verify container dependency policy
         run: sh scripts/test-container-dependency-policy.sh
       - name: Lint release shell scripts
-        run: shellcheck scripts/startup.sh scripts/verify-container-dependency-policy.sh scripts/test-container-dependency-policy.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
+        run: shellcheck scripts/startup.sh scripts/verify-container-dependency-policy.sh scripts/test-container-dependency-policy.sh scripts/test-ci-workflow-policy.sh scripts/test-ci-workflow-policy-regressions.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
       - name: Validate Compose model
         run: docker compose config --quiet
 
@@ -84,9 +114,11 @@ jobs:
       github.event_name == 'push' ||
       (github.event_name == 'pull_request' &&
        github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == github.repository_owner &&
        github.actor == github.repository_owner)
     needs:
       - test
+      - coverage-upload
       - vulnerability-scan
       - data-quality-contract
       - container-preflight
