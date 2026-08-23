@@ -39,11 +39,11 @@ github.com/spf13/viper,https://github.com/spf13/viper/blob/v1.21.0/LICENSE,MIT
 github.com/subosito/gotenv,https://github.com/subosito/gotenv/blob/v1.6.0/LICENSE,MIT
 github.com/ugorji/go/codec,https://github.com/ugorji/go/blob/codec/v1.3.1/codec/LICENSE,MIT
 github.com/vbauerster/mpb/v8,https://github.com/vbauerster/mpb/blob/v8.12.1/UNLICENSE,Unlicense
-github.com/vektah/gqlparser/v2,https://github.com/vektah/gqlparser/blob/v2.5.33/LICENSE,MIT
+github.com/vektah/gqlparser/v2,https://github.com/vektah/gqlparser/blob/v2.5.36/LICENSE,MIT
 go.mongodb.org/mongo-driver/v2,https://github.com/mongodb/mongo-go-driver/blob/v2.6.0/LICENSE,Apache-2.0
 go.uber.org/multierr,https://github.com/uber-go/multierr/blob/v1.11.0/LICENSE.txt,MIT
 go.uber.org/zap,https://github.com/uber-go/zap/blob/v1.28.0/LICENSE,MIT
-go.yaml.in/yaml/v3,https://github.com/yaml/go-yaml/blob/v3.0.4/LICENSE,MIT
+go.yaml.in/yaml/v3,https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE,MIT
 golang.org/x/crypto,https://cs.opensource.google/go/x/crypto/+/v0.53.0:LICENSE,BSD-3-Clause
 golang.org/x/net,https://cs.opensource.google/go/x/net/+/v0.56.0:LICENSE,BSD-3-Clause
 golang.org/x/sync/semaphore,https://cs.opensource.google/go/x/sync/+/v0.21.0:LICENSE,BSD-3-Clause
@@ -54,4 +54,4 @@ google.golang.org/protobuf,https://github.com/protocolbuffers/protobuf-go/blob/v
 gorm.io/datatypes,https://github.com/go-gorm/datatypes/blob/v1.2.7/License,MIT
 gorm.io/driver/mysql,https://github.com/go-gorm/mysql/blob/v1.6.0/License,MIT
 gorm.io/driver/sqlite,https://github.com/go-gorm/sqlite/blob/v1.6.0/License,MIT
-gorm.io/gorm,https://github.com/go-gorm/gorm/blob/v1.31.1/LICENSE,MIT
+gorm.io/gorm,https://github.com/go-gorm/gorm/blob/v1.31.2/LICENSE,MIT
