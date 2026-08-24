@@ -71,7 +71,7 @@ make run-server
 
 # 或使用 Docker
 docker run -d -p 127.0.0.1:1279:1279 -v poetry-data:/app/data \
-  ghcr.io/ericismyeldestson/chinese-poetry-api:0.6.1
+  ghcr.io/ericismyeldestson/chinese-poetry-api:1.1.3
 ```
 
 ### 2. 运行负载测试

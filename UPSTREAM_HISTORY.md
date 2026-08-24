@@ -4,7 +4,7 @@ This project began as a public fork of
 [`palemoky/chinese-poetry-api`](https://github.com/palemoky/chinese-poetry-api)
 on 2026-08-12 at `2026-08-12T15:52:23Z`.
 
-- Independent repository: `ericismyeldestson/chinese-poetry-api`
+- Independently maintained fork: `ericismyeldestson/chinese-poetry-api`
 - Fork point: `1a018967b24eba393a6ab0f8b51e7a28b3eff168`
 - Initial data submodule: `909646524737b70544ee7ae17cb76868a0bc8a55`
 - Program license: GPL-3.0
