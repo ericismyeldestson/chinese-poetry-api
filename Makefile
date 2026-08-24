@@ -198,7 +198,7 @@ fuzz:
 # 注意 golangci-lint fmt 修不了这一条，必须用 gofumpt。
 graphql-gen:
 	@echo "$(BLUE)生成GraphQL代码...$(NC)"
-	@go run github.com/99designs/gqlgen@v0.17.90 generate
+	@go run github.com/99designs/gqlgen@v0.17.94 generate
 	@$(MAKE) --no-print-directory gofumpt
 	@echo "$(GREEN)✓ GraphQL代码生成完成$(NC)"
 
