@@ -38,7 +38,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     -o server ./cmd/server
 
 # Runtime stage
-FROM alpine:3.22.5@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 ARG VCS_REF=unknown
 
@@ -48,9 +48,9 @@ LABEL org.opencontainers.image.source="https://github.com/ericismyeldestson/chin
 
 RUN apk add --no-cache \
     "ca-certificates>=20260611-r0" \
-    "curl>=8.14.1-r3" \
-    "gzip>=1.14-r1" \
-    "sqlite>=3.49.2-r1" \
+    "curl>=8.21.0-r0" \
+    "gzip>=1.14-r2" \
+    "sqlite>=3.53.4-r0" \
     "tzdata>=2026c-r0" \
     && addgroup -g 10001 -S poetry \
     && adduser -u 10001 -S -D -H -G poetry poetry \

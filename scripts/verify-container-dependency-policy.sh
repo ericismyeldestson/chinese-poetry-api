@@ -14,7 +14,7 @@ fi
 # reviewed lower bounds instead of revisions that disappear when Alpine ships a
 # security or maintenance update.
 if ! awk '
-    function valid_reference(reference, expected_image, separator, image, digest, component) {
+    function valid_reference(reference, expected_image, expected_digest, separator, image, digest, component) {
         separator = index(reference, "@sha256:")
         if (separator == 0) {
             return 0
@@ -24,7 +24,8 @@ if ! awk '
         component = image
         sub(/^.*\//, "", component)
         return image == expected_image && index(component, ":") > 0 &&
-            length(digest) == 64 && digest ~ /^[0-9a-f]+$/
+            digest == expected_digest && length(digest) == 64 &&
+            digest ~ /^[0-9a-f]+$/
     }
     {
         line = $0
@@ -37,13 +38,15 @@ if ! awk '
         if (total == 1) {
             if (fields != 4 || toupper(part[1]) != "FROM" ||
                 toupper(part[3]) != "AS" || part[4] != "builder" ||
-                !valid_reference(part[2], "golang:1.25.13-alpine3.23")) {
+                !valid_reference(part[2], "golang:1.25.13-alpine3.23",
+                    "4ce6af6747b07e99ca3a57eadb77565787390a41b0039dcc8e09ec4c57cfa125")) {
                 print "Builder base image contract failed"
                 invalid = 1
             }
         } else if (total == 2) {
             if (fields != 2 || toupper(part[1]) != "FROM" ||
-                !valid_reference(part[2], "alpine:3.22.5")) {
+                !valid_reference(part[2], "alpine:3.24.1",
+                    "28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b")) {
                 print "Runtime base image contract failed"
                 invalid = 1
             }
@@ -96,9 +99,9 @@ if ! awk '
         expected["builder" SUBSEP "musl-dev"] = "musl-dev>=1.2.5-r23"
         expected["builder" SUBSEP "sqlite-dev"] = "sqlite-dev>=3.51.2-r0"
         expected["runtime" SUBSEP "ca-certificates"] = "ca-certificates>=20260611-r0"
-        expected["runtime" SUBSEP "curl"] = "curl>=8.14.1-r3"
-        expected["runtime" SUBSEP "gzip"] = "gzip>=1.14-r1"
-        expected["runtime" SUBSEP "sqlite"] = "sqlite>=3.49.2-r1"
+        expected["runtime" SUBSEP "curl"] = "curl>=8.21.0-r0"
+        expected["runtime" SUBSEP "gzip"] = "gzip>=1.14-r2"
+        expected["runtime" SUBSEP "sqlite"] = "sqlite>=3.53.4-r0"
         expected["runtime" SUBSEP "tzdata"] = "tzdata>=2026c-r0"
     }
     function reject(message) {
