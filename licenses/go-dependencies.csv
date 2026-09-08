@@ -25,7 +25,7 @@ github.com/jinzhu/now,https://github.com/jinzhu/now/blob/v1.1.5/License,MIT
 github.com/leodido/go-urn,https://github.com/leodido/go-urn/blob/v1.4.0/LICENSE,MIT
 github.com/mattn/go-isatty,https://github.com/mattn/go-isatty/blob/v0.0.22/LICENSE,MIT
 github.com/mattn/go-runewidth,https://github.com/mattn/go-runewidth/blob/v0.0.27/LICENSE,MIT
-github.com/mattn/go-sqlite3,https://github.com/mattn/go-sqlite3/blob/v1.14.32/LICENSE,MIT
+github.com/mattn/go-sqlite3,https://github.com/mattn/go-sqlite3/blob/v1.14.50/LICENSE,MIT
 github.com/pelletier/go-toml/v2,https://github.com/pelletier/go-toml/blob/v2.3.1/LICENSE,MIT
 github.com/quic-go/qpack,https://github.com/quic-go/qpack/blob/v0.6.0/LICENSE.md,MIT
 github.com/quic-go/quic-go,https://github.com/quic-go/quic-go/blob/v0.60.0/LICENSE,MIT
