@@ -98,6 +98,8 @@ jobs:
         run: sh scripts/test-ci-workflow-policy.sh
       - name: Run CI workflow policy regression scenarios
         run: sh scripts/test-ci-workflow-policy-regressions.sh
+      - name: Run required-checks execution regression scenarios
+        run: sh scripts/test-required-checks.sh
       - name: Verify pinned data provenance contract
         run: sh scripts/verify-data-contract.sh --contract-only
       - name: Run atomic startup regression scenarios
@@ -105,7 +107,7 @@ jobs:
       - name: Verify container dependency policy
         run: sh scripts/test-container-dependency-policy.sh
       - name: Lint release shell scripts
-        run: shellcheck scripts/startup.sh scripts/verify-container-dependency-policy.sh scripts/test-container-dependency-policy.sh scripts/test-ci-workflow-policy.sh scripts/test-ci-workflow-policy-regressions.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
+        run: shellcheck scripts/startup.sh scripts/verify-container-dependency-policy.sh scripts/test-container-dependency-policy.sh scripts/test-ci-workflow-policy.sh scripts/test-ci-workflow-policy-regressions.sh scripts/test-required-checks.sh scripts/verify-data-contract.sh scripts/verify-license-contract.sh scripts/verify-oci-image.sh scripts/verify-published-image.sh scripts/test-startup.sh
       - name: Validate Compose model
         run: docker compose config --quiet
 
@@ -379,3 +381,45 @@ jobs:
           cache: true
       - name: Verify reachable dependency licenses and bundled notices
         run: sh scripts/verify-license-contract.sh
+
+  required-checks:
+    name: required-checks
+    if: always()
+    needs:
+      - test
+      - coverage-upload
+      - vulnerability-scan
+      - data-quality-contract
+      - license-contract
+      - container-preflight
+      - full-data-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every mandatory job to succeed
+        shell: bash
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          if ! jq --exit-status --slurp '
+            length == 1 and
+            (.[0] |
+              type == "object" and
+              keys == [
+                "container-preflight",
+                "coverage-upload",
+                "data-quality-contract",
+                "full-data-preflight",
+                "license-contract",
+                "test",
+                "vulnerability-scan"
+              ] and
+              all(.[]; type == "object" and .result == "success")
+            )
+          ' <<<"$NEEDS_JSON" >/dev/null; then
+            echo "Required jobs must all finish with success; missing, skipped, cancelled, or failed jobs block merging." >&2
+            exit 1
+          fi
+          echo "All seven required jobs completed successfully."
