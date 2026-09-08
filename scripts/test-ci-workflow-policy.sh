@@ -6,6 +6,7 @@ workflow=${1:-.github/workflows/test.yml}
 
 ruby - "$workflow" <<'RUBY'
 require "yaml"
+require "digest"
 
 def mapping(value, label, errors)
   return value if value.is_a?(Hash)
@@ -226,6 +227,67 @@ unless normalized_condition(full_data_job["if"]) == trusted_condition
 end
 unless sequence(full_data_job["needs"]).include?("coverage-upload")
   errors << "full-data-preflight must depend on coverage-upload"
+end
+
+required_names = %w[test coverage-upload vulnerability-scan data-quality-contract
+                    license-contract container-preflight full-data-preflight]
+required_names.each do |name|
+  dependency = mapping(jobs[name], "jobs.#{name}", errors)
+  unless fail_closed?(dependency["continue-on-error"])
+    errors << "#{name} must not mask its result with continue-on-error"
+  end
+end
+
+gate = mapping(jobs["required-checks"], "jobs.required-checks", errors)
+expected_gate_keys = %w[name if needs runs-on timeout-minutes permissions steps]
+unless gate.keys.sort == expected_gate_keys.sort
+  errors << "required-checks must retain only its reviewed job fields"
+end
+errors << "required-checks must retain its stable check name" unless gate["name"] == "required-checks"
+unless normalized_condition(gate["if"]) == "always()"
+  errors << "required-checks must run with always() even when dependencies fail or skip"
+end
+unless sequence(gate["needs"]).sort == required_names.sort
+  errors << "required-checks must depend on exactly the seven mandatory jobs"
+end
+errors << "required-checks permissions must be explicitly empty" unless gate["permissions"] == {}
+errors << "required-checks must use ubuntu-latest" unless gate["runs-on"] == "ubuntu-latest"
+errors << "required-checks timeout must be five minutes" unless gate["timeout-minutes"] == 5
+# Global env is inherited even when the job's permissions are empty. In
+# particular, BASH_ENV or PATH overrides must not redirect the inline gate.
+if workflow.key?("env") && workflow["env"] != {}
+  errors << "workflow env must remain empty for the isolated required-checks job"
+end
+
+gate_steps = gate["steps"]
+if !gate_steps.is_a?(Array) || gate_steps.length != 1
+  errors << "required-checks must have exactly one inline step and no checkout"
+else
+  step = mapping(gate_steps.first, "required-checks inline step", errors)
+  unless step.keys.sort == %w[name shell env run].sort
+    errors << "required-checks step must not add actions, conditions, or failure masking"
+  end
+  unless step["name"] == "Require every mandatory job to succeed" && step["shell"] == "bash"
+    errors << "required-checks must retain its reviewed inline bash step"
+  end
+  unless step["env"] == { "NEEDS_JSON" => '${{ toJSON(needs) }}' }
+    errors << "required-checks must receive only the complete needs JSON as data"
+  end
+  # Pin the reviewed inline implementation without keeping a second executable
+  # copy. Execution regressions extract and run the actual workflow script.
+  reviewed_gate_sha256 = "d9da4b436e86afa04b064fab962cb049ee595e5d970475e0a5e2766a9d51e8e5"
+  unless step["run"].is_a?(String) && Digest::SHA256.hexdigest(step["run"]) == reviewed_gate_sha256
+    errors << "required-checks inline script differs from the reviewed fail-closed implementation"
+  end
+end
+
+contract_steps = jobs.dig("data-quality-contract", "steps")
+contract_steps = [] unless contract_steps.is_a?(Array)
+%w[test-ci-workflow-policy.sh test-ci-workflow-policy-regressions.sh test-required-checks.sh].each do |script|
+  hooks = contract_steps.select { |step| step.is_a?(Hash) && step["run"] == "sh scripts/#{script}" }
+  unless hooks.length == 1 && hooks.first.keys.sort == %w[name run]
+    errors << "data-quality-contract must run #{script} exactly once without a skip or failure mask"
+  end
 end
 
 unless errors.empty?
