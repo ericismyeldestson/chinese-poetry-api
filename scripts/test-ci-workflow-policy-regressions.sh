@@ -238,4 +238,88 @@ awk '
 ' "$workflow" >"$work_dir/equivalent-needs.yml"
 expect_mutation_accepted "equivalent scalar needs" "$work_dir/equivalent-needs.yml"
 
+ruby - "$workflow" "$validator" "$work_dir" <<'RUBY'
+require "yaml"
+require "open3"
+
+path, validator, work_dir = ARGV
+baseline = YAML.safe_load(File.read(path), permitted_classes: [],
+                          permitted_symbols: [], aliases: true)
+gate = ->(workflow) { workflow.fetch("jobs").fetch("required-checks") }
+step = ->(workflow) { gate.call(workflow).fetch("steps").fetch(0) }
+mutations = {
+  "deleted gate" => ->(w) { w.fetch("jobs").delete("required-checks") },
+  "renamed gate job" => ->(w) { w.fetch("jobs")["renamed-gate"] = w.fetch("jobs").delete("required-checks") },
+  "renamed check context" => ->(w) { gate.call(w)["name"] = "checks-are-green" },
+  "missing always condition" => ->(w) { gate.call(w).delete("if") },
+  "skipped gate job" => ->(w) { gate.call(w)["if"] = false },
+  "success-only gate job" => ->(w) { gate.call(w)["if"] = "success()" },
+  "extra dependency" => ->(w) { gate.call(w).fetch("needs") << "ghcr-write-probe" },
+  "duplicate dependency" => ->(w) { gate.call(w).fetch("needs") << "test" },
+  "missing permissions" => ->(w) { gate.call(w).delete("permissions") },
+  "contents permission" => ->(w) { gate.call(w)["permissions"] = { "contents" => "read" } },
+  "OIDC permission" => ->(w) { gate.call(w)["permissions"] = { "id-token" => "write" } },
+  "package write permission" => ->(w) { gate.call(w)["permissions"] = { "packages" => "write" } },
+  "masked gate job failure" => ->(w) { gate.call(w)["continue-on-error"] = true },
+  "matrix check contexts" => ->(w) { gate.call(w)["strategy"] = { "matrix" => { "shard" => [1, 2] } } },
+  "untrusted runner" => ->(w) { gate.call(w)["runs-on"] = "self-hosted" },
+  "job environment injection" => ->(w) { gate.call(w)["env"] = { "BASH_ENV" => "./pr-script.sh" } },
+  "global environment injection" => ->(w) { w["env"] = { "BASH_ENV" => "./pr-script.sh" } },
+  "checkout before gate" => ->(w) { gate.call(w).fetch("steps").unshift({ "uses" => "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" }) },
+  "missing gate step" => ->(w) { gate.call(w)["steps"] = [] },
+  "skipped gate step" => ->(w) { step.call(w)["if"] = false },
+  "masked gate step failure" => ->(w) { step.call(w)["continue-on-error"] = true },
+  "shell substitution" => ->(w) { step.call(w)["shell"] = "sh" },
+  "checkout replaces inline step" => ->(w) { step.call(w)["uses"] = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"; step.call(w).delete("run") },
+  "static success input" => ->(w) { step.call(w)["env"]["NEEDS_JSON"] = '{"test":{"result":"success"}}' },
+  "partial needs input" => ->(w) { step.call(w)["env"]["NEEDS_JSON"] = '${{ toJSON(needs.test) }}' },
+  "extra step environment" => ->(w) { step.call(w)["env"]["BASH_ENV"] = "./pr-script.sh" },
+  "unconditional success" => ->(w) { step.call(w)["run"] = "exit 0\n" },
+  "external gate script" => ->(w) { step.call(w)["run"] = "sh scripts/required-checks.sh\n" },
+  "failure masked in inline script" => ->(w) { step.call(w)["run"] = step.call(w).fetch("run").sub("exit 1", "exit 0") },
+  "neutral jobs accepted" => ->(w) { step.call(w)["run"] = step.call(w).fetch("run").sub('.result == "success"', '.result == "success" or .result == "neutral"') },
+  "JSON stream check removed" => ->(w) { step.call(w)["run"] = step.call(w).fetch("run").sub("--slurp", "") }
+}
+
+gate.call(baseline).fetch("needs").each do |name|
+  mutations["missing dependency #{name}"] = ->(w) { gate.call(w).fetch("needs").delete(name) }
+  mutations["masked upstream job #{name}"] = ->(w) { w.fetch("jobs").fetch(name)["continue-on-error"] = true }
+end
+%w[test-ci-workflow-policy.sh test-ci-workflow-policy-regressions.sh test-required-checks.sh].each do |script|
+  hooks = ->(w) { w.fetch("jobs").fetch("data-quality-contract").fetch("steps") }
+  selected = ->(w) { hooks.call(w).find { |entry| entry["run"] == "sh scripts/#{script}" } }
+  mutations["deleted test hook #{script}"] = ->(w) { hooks.call(w).delete(selected.call(w)) }
+  mutations["skipped test hook #{script}"] = ->(w) { selected.call(w)["if"] = false }
+  mutations["masked test hook #{script}"] = ->(w) { selected.call(w)["continue-on-error"] = true }
+end
+
+mutations.each_with_index do |(name, mutate), index|
+  candidate = Marshal.load(Marshal.dump(baseline))
+  mutate.call(candidate)
+  abort "gate policy fixture did not mutate workflow: #{name}" if candidate == baseline
+  fixture = File.join(work_dir, "gate-mutation-#{index}.yml")
+  File.write(fixture, YAML.dump(candidate))
+  _stdout, stderr, status = Open3.capture3("sh", validator, fixture)
+  abort "gate policy regression accepted #{name}" if status.success?
+  unless stderr.include?("CI workflow policy violation")
+    abort "gate policy regression failed for an unrelated reason: #{name}: #{stderr}"
+  end
+end
+
+accepted = {
+  "explicit expression always" => ->(w) { gate.call(w)["if"] = '${{ always() }}' },
+  "equivalent dependency order" => ->(w) { gate.call(w).fetch("needs").reverse! }
+}
+accepted.each_with_index do |(name, mutate), index|
+  candidate = Marshal.load(Marshal.dump(baseline))
+  mutate.call(candidate)
+  abort "gate accepted fixture did not mutate workflow: #{name}" if candidate == baseline
+  fixture = File.join(work_dir, "gate-accepted-#{index}.yml")
+  File.write(fixture, YAML.dump(candidate))
+  _stdout, stderr, status = Open3.capture3("sh", validator, fixture)
+  abort "gate policy regression rejected #{name}: #{stderr}" unless status.success?
+end
+puts "required-checks policy regressions passed (#{mutations.length} rejected mutations, #{accepted.length} equivalent forms accepted)"
+RUBY
+
 echo "CI workflow policy regression scenarios passed"
