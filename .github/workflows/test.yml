@@ -1,6 +1,6 @@
 # LOCAL CANDIDATE ONLY. Never merge this synthetic fixture.
 name: Test
-run-name: required-checks negative canary - failure
+run-name: required-checks negative canary - cancelled
 'on':
   pull_request:
     branches: [main]
@@ -18,7 +18,9 @@ jobs:
       - name: Synthetic fixture only - not a product test
         shell: bash
         run: |
-          echo "Intentional negative fixture failure"
+          echo "Cancellation target: cancel only this new canary run"
+          sleep 180
+          echo "Cancellation was not observed; fail closed"
           exit 1
   coverage-upload:
     if: github.head_ref == 'agent/required-checks-negative-canary' && github.event.pull_request.head.repo.full_name == github.repository && github.actor == github.repository_owner
