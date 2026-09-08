@@ -183,7 +183,7 @@ jobs:
             awk '$2 != "poetry.db" { print }' checksums.txt | sha256sum -c -
           )
       - name: Attest database build provenance
-        uses: actions/attest-build-provenance@8beda2b7ed98355c0e97c0a63bec38ae472e66c4 # v4
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-path: release-assets/poetry.db.gz
       - name: Create immutable data release
