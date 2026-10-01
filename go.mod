@@ -1,8 +1,6 @@
 module github.com/ericismyeldestson/chinese-poetry-api
 
-go 1.25.0
-
-toolchain go1.25.13
+go 1.26.0
 
 require (
 	github.com/99designs/gqlgen v0.17.94
@@ -15,7 +13,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.15.2
 	github.com/vektah/gqlparser/v2 v2.5.36
 	go.uber.org/zap v1.28.0
-	golang.org/x/time v0.15.0
+	golang.org/x/time v0.16.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
