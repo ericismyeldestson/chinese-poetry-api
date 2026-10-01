@@ -1,12 +1,10 @@
 module github.com/ericismyeldestson/chinese-poetry-api
 
-go 1.25.0
-
-toolchain go1.25.13
+go 1.27
 
 require (
 	github.com/99designs/gqlgen v0.17.94
-	github.com/fhluo/hanconv/go v0.3.0
+	github.com/fhluo/hanconv/go v0.4.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/mattn/go-sqlite3 v1.14.32
 	github.com/spf13/cobra v1.10.2
