@@ -2,7 +2,7 @@
 # reviewed minimum versions within those stable Alpine branches: Alpine replaces
 # superseded package revisions in-place, while the resolved versions remain
 # captured by the release SBOM and provenance.
-FROM golang:1.25.13-alpine3.23@sha256:4ce6af6747b07e99ca3a57eadb77565787390a41b0039dcc8e09ec4c57cfa125 AS builder
+FROM golang:1.27.3-alpine3.23@sha256:8a5046497cda39860b832ffdbe8dd66018a0f05bb01352f533a36e7e2ced66a0 AS builder
 
 ARG BUILDKIT_SBOM_SCAN_STAGE=true
 ARG VCS_REF=unknown
